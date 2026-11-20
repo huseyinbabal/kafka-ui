@@ -66,15 +66,15 @@ kind: Deployment
 metadata:
   name: kafka-ui
   namespace: kafka-ui
-  labels: {app: kafka-ui}
+  labels: {app.kubernetes.io/name: kafka-ui}
 spec:
   replicas: 1
   strategy: {type: Recreate}   # SQLite on an RWO volume
   selector:
-    matchLabels: {app: kafka-ui}
+    matchLabels: {app.kubernetes.io/name: kafka-ui}
   template:
     metadata:
-      labels: {app: kafka-ui}
+      labels: {app.kubernetes.io/name: kafka-ui}
     spec:
       securityContext:
         runAsNonRoot: true
@@ -121,6 +121,6 @@ metadata:
   name: kafka-ui
   namespace: kafka-ui
 spec:
-  selector: {app: kafka-ui}
+  selector: {app.kubernetes.io/name: kafka-ui}
   ports:
     - {name: http, port: 8080, targetPort: http}
