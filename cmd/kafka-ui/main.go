@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -43,6 +44,9 @@ func hashPassword() error {
 	fmt.Fprint(os.Stderr, "password: ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && line == "" {
+		if errors.Is(err, io.EOF) {
+			return errors.New("no password given on stdin")
+		}
 		return err
 	}
 	h, err := auth.HashPassword(strings.TrimRight(line, "\r\n"))

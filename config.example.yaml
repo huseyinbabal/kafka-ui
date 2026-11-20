@@ -1,25 +1,52 @@
+# kafka-ui configuration. Copy to config.yaml (git-ignored) and adjust.
+# Secrets (passwords) can be inline, "${ENV_VAR}" or "file:/path/to/secret".
+
 server:
-  addr: ":8080"
-  secureCookies: false   # served over plain http via port-forward in dev
+  addr: ":8080"            # env override: KAFKAUI_SERVER_ADDR
+  secureCookies: false     # set true (default) when served over HTTPS
+
 auth:
   sessionIdleTimeout: 12h
-  users:
-    - username: admin
+  users:                   # create hashes with: kafka-ui hash-password
+    - username: admin      # dev only: password "admin"
       passwordHash: "$2a$10$9zF4kuqZHQtxLmfkh3/dmeNM9iEnuVsQ//h2or.eJcCcw6cKlVRzi"
-      role: admin
-    - username: viewer
+      role: admin          # admin: everything; viewer: read-only
+    - username: viewer     # dev only: password "viewer"
       passwordHash: "$2a$10$ts/2.yiJuBUBd/ZXLbfYLuxQaRsmj6Gxa1uCsB5xPLgtra.pgOZyG"
       role: viewer
+
 storage:
-  path: /data/kafka-ui.db
+  path: kafka-ui.db        # SQLite for sessions and analytics; env override: KAFKAUI_STORAGE_PATH
+  retention: 168h          # minute-level analytics kept this long (raw 5s samples: 6h)
+
+collector:
+  interval: 5s             # analytics sampling
+  liveInterval: 2s         # live topology snapshots
+
 clusters:
-  - id: orders
-    name: Orders (kind)
+  - id: local              # [a-z0-9-], used in URLs
+    name: Local
     bootstrap: ["localhost:9092"]
-  - id: orders-readonly
-    name: Orders (read-only)
+    schemaRegistry:
+      url: http://localhost:8081
+
+  - id: local-readonly     # same cluster, all mutations refused server-side
+    name: Local (read-only)
     bootstrap: ["localhost:9092"]
     readOnly: true
-  - id: unreachable
-    name: Unreachable (demo)
-    bootstrap: ["does-not-exist.kafka.svc:9092"]
+
+  - id: secure             # SASL/SCRAM over TLS, Schema Registry with basic auth
+    name: Secure
+    bootstrap: ["broker-1.example.com:9093", "broker-2.example.com:9093"]
+    sasl:
+      mechanism: SCRAM-SHA-512   # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+      username: kafka-ui
+      password: ${SECURE_KAFKA_PASSWORD}
+    tls:
+      enabled: true
+      caFile: /etc/kafka-ui/ca.pem
+      # certFile/keyFile for mTLS; insecureSkipVerify: true only for testing
+    schemaRegistry:
+      url: https://schema-registry.example.com
+      username: kafka-ui
+      password: file:/etc/kafka-ui/sr-password

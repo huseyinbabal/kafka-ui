@@ -80,3 +80,15 @@ func TestSecret(t *testing.T) {
 		t.Fatal("secret must not print")
 	}
 }
+
+// The documented example must stay loadable.
+func TestExampleConfigLoads(t *testing.T) {
+	t.Setenv("SECURE_KAFKA_PASSWORD", "x")
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Clusters) != 3 || cfg.Clusters[2].SASL == nil || cfg.Clusters[2].TLS == nil || cfg.Collector.LiveInterval == 0 {
+		t.Fatalf("unexpected example config: %+v", cfg)
+	}
+}

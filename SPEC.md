@@ -1,6 +1,6 @@
 # Spec: Kafka UI
 
-> Status: **APPROVED, in progress** (M0–M6 done, 2026-11-20; open items: integration/E2E tests). Living document: update this first whenever scope or a decision changes.
+> Status: **v1 DONE** (2026-11-20; see "Success criteria status": three items were verified with `e2e-` substitutes). Living document: update this first whenever scope or a decision changes.
 
 ## 1. Objective
 
@@ -292,6 +292,25 @@ Each item is checked against the `kafkatr` kind cluster:
 11. Live view: `kubectl scale deploy/analytics --replicas=4` shows a 4th consumer node within 5s; scaling back removes it. At least 30 fps with the reference cluster.
 12. `make lint test test-integration` pass.
 
+### Success criteria status (2026-11-20)
+
+| # | Status | How it was checked |
+|---|---|---|
+| 1 | ✅ | `make build` → `bin/kafka-ui` (UI embedded); image runs in `kafka-ui` namespace |
+| 2 | ✅ | 4 clusters configured (`orders`, `orders-readonly`, `secure`, `unreachable`); `unreachable` is offline, the others online |
+| 3 | ✅ | API: unit tests for every mutation route (403 `FORBIDDEN`); UI: Playwright `viewer sees no write actions` |
+| 4 | ✅ | `clicks` 4 partitions RF 3, `orders`/`payments`/`emails` 1 partition RF 3, no URP |
+| 5 | ✅* | JSON pretty-printed and 100k filtered scan with progress/cancel verified on `e2e-messages` (120k records); `orders` itself is empty in kind |
+| 6 | ✅ | groups listed with members; `ledger` per-partition lag equals `kafka-consumer-groups.sh --describe` |
+| 7 | ✅ | integration test + Playwright: preview then apply on `e2e-` groups; active groups refused with `GROUP_NOT_EMPTY` |
+| 8 | ✅ | ACL CRUD on `secure-cluster` (and the ACL-enabled integration container); `SECURITY_DISABLED` notice on `orders-cluster` |
+| 9 | ✅ | Avro produce/decode in the browser, new version registered; interop checked both ways with Confluent console tools |
+| 10 | ✅* | 1h series for `clicks` exists (the kind apps produce no traffic, so it's flat) and `ledger` lag trend; data survived several pod restarts |
+| 11 | ✅* | scaling `e2e-traffic-consumer` 1→3 showed new consumers within one tick; `analytics` was not scaled (existing workload, ask-first). 500-node live view: 60 fps (Playwright) |
+| 12 | ✅ | `make lint test test-integration` exit 0 |
+
+\* checked with an `e2e-` substitute because the real workload has no data or is off-limits.
+
 ## 10. Milestones
 
 | # | Milestone | Contents |
@@ -349,3 +368,7 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 - 2026-11-20: Success criterion 11 verified with the e2e demo consumer (scaling `e2e-traffic-consumer` 1→3 showed the new members within one tick after their JVMs joined) rather than `analytics`, which belongs to the existing workloads (ask first). Measured ~30 fps in the automation browser with ~35 nodes, which looks like a browser frame cap; the 500-node budget is not verified yet.
 - 2026-11-20: **Live view changed from a 3D force graph to a 2D flow layout** (user feedback: kinds were hard to tell apart and message density wasn't visible). Brokers are cards on top (controller badge, leaders, ingress); topics are the middle column (in/out rate bars, leader brokers); consumer groups are the right column (lag status border + label, lag, consume rate, member chips). Arrows produced→topic and curves topic→group have width ∝ √(msg/s) and dashes moving faster with higher rates, with numeric labels; animation stops with prefers-reduced-motion. react-force-graph-2d/3d and three.js were removed (live chunk ~430 KB → ~6 KB gz).
 - 2026-11-20: Live consume rates use a 30s sliding window of commits (consumers that commit in batches no longer flicker to 0). A lagging group without members is only "critical" if it consumed nothing in that window.
+- 2026-11-20: Integration tests use `confluentinc/confluent-local:7.5.0` + `cp-schema-registry:7.5.0` (the testcontainers Kafka module targets the Confluent image; 7.9 fails its advertised-listener check). The ACL container runs `StandardAuthorizer` with `User:ANONYMOUS` as super user.
+- 2026-11-20: Coverage targets are measured on merged unit + integration runs (`make coverage`): kafka 80.8%, serde 85.2%, analytics 87.3%, auth 87.3%.
+- 2026-11-20: Playwright logs in once per role in a global setup and reuses the session, because the server rate-limits logins to 5/min per IP.
+- 2026-11-20: Recharts is loaded lazily (analytics route and the chart cards), main bundle ~218 KB gz.
