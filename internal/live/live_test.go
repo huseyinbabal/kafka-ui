@@ -33,8 +33,20 @@ func TestConsumeTrackerRates(t *testing.T) {
 	if _, ok := r["g"]["t"][1]; ok {
 		t.Fatal("uncommitted partition must have no rate")
 	}
+	// A bursty consumer: no new commit for a few ticks keeps a smoothed, non-zero rate.
+	r = tr.rates(t0.Add(4*time.Second), lag(140))
+	if r["g"]["t"][0] != 10 {
+		t.Fatalf("smoothed rate %v, want 10 (40 msgs over 4s)", r["g"]["t"][0])
+	}
+	// The window slides: after 30s+ the oldest samples drop out.
+	for i := 3; i <= 20; i++ {
+		tr.rates(t0.Add(time.Duration(i*2)*time.Second), lag(140))
+	}
+	if r := tr.rates(t0.Add(42*time.Second), lag(140)); r["g"]["t"][0] != 0 {
+		t.Fatalf("idle for longer than the window must be 0: %v", r)
+	}
 	// Offsets reset backwards: no negative rate.
-	if r := tr.rates(t0.Add(4*time.Second), lag(10)); r["g"]["t"][0] != 0 {
+	if r := tr.rates(t0.Add(44*time.Second), lag(10)); r["g"]["t"][0] != 0 {
 		t.Fatalf("reset must not produce a rate: %v", r)
 	}
 }

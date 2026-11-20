@@ -31,7 +31,7 @@ export type GraphNode = SnapshotNode & {
   z?: number
   [sim: string]: unknown
 }
-/** force-graph replaces source/target ids with node objects after the first layout. */
+/** Endpoints are ids; kept as a union so graph code also accepts resolved node objects. */
 export type GraphLink = Omit<SnapshotLink, 'source' | 'target'> & {
   key: string
   source: string | GraphNode
@@ -144,11 +144,15 @@ export function filterGraph(g: Graph, { hideInternal, query }: FilterOptions): G
 
 export type GroupStatus = 'good' | 'warning' | 'serious' | 'critical'
 
-/** Lag status of a group: red when nobody consumes a lagging group. */
-export function groupStatus(n: Pick<SnapshotNode, 'lag' | 'members'>): GroupStatus {
+/**
+ * Lag status of a group: red when nobody consumes a lagging group. A group
+ * that consumed recently (rate > 0) isn't abandoned even if it has no member
+ * at this instant (consumers that reconnect between batches).
+ */
+export function groupStatus(n: Pick<SnapshotNode, 'lag' | 'members' | 'rate'>): GroupStatus {
   const lag = n.lag ?? 0
   if (lag === 0) return 'good'
-  if (!n.members) return 'critical'
+  if (!n.members && !(n.rate > 0)) return 'critical'
   if (lag >= 10_000) return 'serious'
   return 'warning'
 }
@@ -159,3 +163,82 @@ export const statusLabel: Record<GroupStatus, string> = {
   serious: 'Far behind (≥ 10k)',
   critical: 'Lag with no consumers',
 }
+
+// ---- 2D flow view model: brokers on top, producers → topics → consumer groups ----
+
+export type FlowEdge = { topicId: string; groupId: string; rate: number; partitions: number }
+export type FlowTopic = { node: GraphNode; leaders: { broker: string; partitions: number }[]; outRate: number }
+export type FlowGroup = { node: GraphNode; members: GraphNode[]; status: GroupStatus }
+export type Flow = {
+  brokers: GraphNode[]
+  topics: FlowTopic[]
+  groups: FlowGroup[]
+  edges: FlowEdge[]
+  maxRate: number
+}
+
+/**
+ * Lays the graph out as columns. Topics are ordered by ingress, groups by the
+ * first topic they read, so most edges run straight across.
+ */
+export function buildFlow(g: Graph): Flow {
+  const byId = new Map(g.nodes.map((n) => [n.id, n]))
+  const brokers = g.nodes
+    .filter((n) => n.kind === 'broker')
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+  const leaders = new Map<string, { broker: string; partitions: number }[]>()
+  const membersOf = new Map<string, GraphNode[]>()
+  const edges: FlowEdge[] = []
+  for (const l of g.links) {
+    const s = endpointId(l.source)
+    const t = endpointId(l.target)
+    if (l.kind === 'leader') {
+      const b = byId.get(t)
+      if (b) leaders.set(s, [...(leaders.get(s) ?? []), { broker: b.label, partitions: l.partitions }])
+    } else if (l.kind === 'member') {
+      const m = byId.get(t)
+      if (m) membersOf.set(s, [...(membersOf.get(s) ?? []), m])
+    } else if (l.kind === 'offsets' && byId.has(t)) {
+      edges.push({ topicId: t, groupId: s, rate: l.rate, partitions: l.partitions })
+    }
+  }
+  const outRate = new Map<string, number>()
+  for (const e of edges) outRate.set(e.topicId, (outRate.get(e.topicId) ?? 0) + e.rate)
+
+  const topics = g.nodes
+    .filter((n) => n.kind === 'topic')
+    .sort(
+      (a, b) =>
+        b.rate - a.rate || (outRate.get(b.id) ?? 0) - (outRate.get(a.id) ?? 0) || a.label.localeCompare(b.label),
+    )
+    .map((node) => ({
+      node,
+      leaders: (leaders.get(node.id) ?? []).sort((a, b) =>
+        a.broker.localeCompare(b.broker, undefined, { numeric: true }),
+      ),
+      outRate: outRate.get(node.id) ?? 0,
+    }))
+  const topicIndex = new Map(topics.map((t, i) => [t.node.id, i]))
+  const firstTopic = (groupId: string) =>
+    Math.min(
+      ...edges.filter((e) => e.groupId === groupId).map((e) => topicIndex.get(e.topicId) ?? Number.MAX_SAFE_INTEGER),
+      Number.MAX_SAFE_INTEGER,
+    )
+  const groups = g.nodes
+    .filter((n) => n.kind === 'group')
+    .map((node) => ({
+      node,
+      members: (membersOf.get(node.id) ?? []).sort((a, b) => a.label.localeCompare(b.label)),
+      status: groupStatus(node),
+    }))
+    .sort((a, b) => firstTopic(a.node.id) - firstTopic(b.node.id) || a.node.label.localeCompare(b.node.label))
+
+  const maxRate = Math.max(1, ...topics.map((t) => Math.max(t.node.rate, t.outRate)), ...edges.map((e) => e.rate))
+  return { brokers, topics, groups, edges: edges.filter((e) => topicIndex.has(e.topicId)), maxRate }
+}
+
+/** Stroke width for a rate: 1.5px when idle, up to 10px at the busiest flow (sqrt keeps small flows visible). */
+export const flowWidth = (rate: number, max: number) => (rate <= 0 ? 1.5 : 2 + 8 * Math.sqrt(Math.min(rate / max, 1)))
+
+/** Dash animation period: faster flows move faster; 0 = static. */
+export const flowSeconds = (rate: number) => (rate <= 0 ? 0 : Math.max(0.25, Math.min(4, 4 / Math.log2(2 + rate))))

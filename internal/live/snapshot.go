@@ -77,34 +77,53 @@ type RateSource func(cluster string) map[string]map[int32]float64
 
 func nodeID(kind NodeKind, name string) string { return string(kind) + ":" + name }
 
-// consumeTracker remembers committed offsets between snapshots to derive consume rates.
-type consumeTracker struct {
+// consumeWindow smooths consume rates: consumers that commit in bursts (every
+// few seconds) would otherwise flicker between 0 and a spike.
+const consumeWindow = 30 * time.Second
+
+type commitSample struct {
 	at        time.Time
 	committed map[string]map[string]map[int32]int64 // group → topic → partition → offset
 }
 
+// consumeTracker remembers recent committed offsets to derive consume rates.
+type consumeTracker struct {
+	history []commitSample // oldest first, about consumeWindow long
+}
+
 func (t *consumeTracker) rates(now time.Time, lags kadm.DescribedGroupLags) map[string]map[string]map[int32]float64 {
 	cur := map[string]map[string]map[int32]int64{}
-	out := map[string]map[string]map[int32]float64{}
-	dt := now.Sub(t.at).Seconds()
 	for g, l := range lags {
 		cur[g] = map[string]map[int32]int64{}
-		out[g] = map[string]map[int32]float64{}
 		for topic, ps := range l.Lag {
 			cur[g][topic] = map[int32]int64{}
-			out[g][topic] = map[int32]float64{}
 			for p, pl := range ps {
-				if pl.Commit.At < 0 {
-					continue
-				}
-				cur[g][topic][p] = pl.Commit.At
-				if prev, ok := t.committed[g][topic][p]; ok && dt > 0 && pl.Commit.At >= prev {
-					out[g][topic][p] = float64(pl.Commit.At-prev) / dt
+				if pl.Commit.At >= 0 {
+					cur[g][topic][p] = pl.Commit.At
 				}
 			}
 		}
 	}
-	t.at, t.committed = now, cur
+	out := map[string]map[string]map[int32]float64{}
+	if len(t.history) > 0 {
+		old := t.history[0]
+		dt := now.Sub(old.at).Seconds()
+		for g, topics := range cur {
+			out[g] = map[string]map[int32]float64{}
+			for topic, ps := range topics {
+				out[g][topic] = map[int32]float64{}
+				for p, at := range ps {
+					if prev, ok := old.committed[g][topic][p]; ok && dt > 0 && at >= prev {
+						out[g][topic][p] = float64(at-prev) / dt
+					}
+				}
+			}
+		}
+	}
+	t.history = append(t.history, commitSample{at: now, committed: cur})
+	for len(t.history) > 2 && now.Sub(t.history[1].at) >= consumeWindow {
+		t.history = t.history[1:]
+	}
 	return out
 }
 

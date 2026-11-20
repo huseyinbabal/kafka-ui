@@ -139,3 +139,22 @@
     @apply font-sans;
   }
 }
+
+/* Live view: dashes moving along a flow line; speed is set per line. */
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+.flow-dash {
+  stroke-dasharray: 10 6;
+  animation: flow-dash linear infinite;
+}
+.flow-dash-paused {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-dash {
+    animation: none;
+  }
+}

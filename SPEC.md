@@ -1,6 +1,6 @@
 # Spec: Kafka UI
 
-> Status: **APPROVED, in progress** (M0–M6 done, 2026-11-20; open items: integration/E2E tests, 500-node FPS check). Living document: update this first whenever scope or a decision changes.
+> Status: **APPROVED, in progress** (M0–M6 done, 2026-11-20; open items: integration/E2E tests). Living document: update this first whenever scope or a decision changes.
 
 ## 1. Objective
 
@@ -87,7 +87,7 @@ Features are grouped into milestones (see section 10). Each bullet is an accepta
   - hygiene: idle topics (no ingress in X), empty/dead groups, topics with RF < 2 or `min.insync.replicas` misconfigured
 - Time range picker: 15m / 1h / 6h / 24h / 7d.
 
-### F10. Live topology (3D)
+### F10. Live topology (2D flow; was 3D, changed 2026-11-20 at the user's request)
 - Route `/clusters/:id/live` shows a real-time 3D force graph (`react-force-graph-3d` / three.js):
   - **Nodes:** brokers (controller highlighted), topics, consumer groups, consumer members (client ID @ host).
   - **Edges:** topic → leader broker; consumer member → topic, built from partition assignments.
@@ -117,7 +117,7 @@ Kafka Connect / MirrorMaker management, ksqlDB, Strimzi CRD awareness, OIDC/LDAP
 | UI | shadcn/ui + Tailwind CSS v4, lucide icons, dark mode default | |
 | Data/routing | TanStack Query + TanStack Router, TanStack Table for grids, TanStack Virtual for message lists | |
 | Charts | shadcn charts (Recharts) | |
-| 3D | `react-force-graph-3d` (three.js) | |
+| Live view | plain React + SVG (force-graph/three.js removed 2026-11-20) | |
 | Forms | react-hook-form + zod | |
 | FE tooling | Bun (package manager/runner), Biome (lint+format), Vitest + Testing Library, Playwright | |
 | Deploy | Multi-stage Dockerfile → distroless image; K8s manifests in `deploy/` | runs inside kind |
@@ -347,3 +347,5 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 - 2026-11-20: The client merges snapshots into the existing graph (node and link objects keep identity and positions); the layout only gets new data when nodes/links are added or removed. New members start next to their group and are drawn 3× larger for 4s; joins/leaves go to a "Recent changes" list. Group color = lag status (good/warning/serious/critical, dataviz status palette) with legend and labels.
 - 2026-11-20: The live page and three.js load lazily (separate ~430 KB gz chunk). Kafka-provided labels are HTML-escaped in tooltips.
 - 2026-11-20: Success criterion 11 verified with the e2e demo consumer (scaling `e2e-traffic-consumer` 1→3 showed the new members within one tick after their JVMs joined) rather than `analytics`, which belongs to the existing workloads (ask first). Measured ~30 fps in the automation browser with ~35 nodes, which looks like a browser frame cap; the 500-node budget is not verified yet.
+- 2026-11-20: **Live view changed from a 3D force graph to a 2D flow layout** (user feedback: kinds were hard to tell apart and message density wasn't visible). Brokers are cards on top (controller badge, leaders, ingress); topics are the middle column (in/out rate bars, leader brokers); consumer groups are the right column (lag status border + label, lag, consume rate, member chips). Arrows produced→topic and curves topic→group have width ∝ √(msg/s) and dashes moving faster with higher rates, with numeric labels; animation stops with prefers-reduced-motion. react-force-graph-2d/3d and three.js were removed (live chunk ~430 KB → ~6 KB gz).
+- 2026-11-20: Live consume rates use a 30s sliding window of commits (consumers that commit in batches no longer flicker to 0). A lagging group without members is only "critical" if it consumed nothing in that window.

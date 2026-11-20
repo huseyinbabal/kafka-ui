@@ -90,9 +90,42 @@ describe('filterGraph', () => {
 
 describe('groupStatus', () => {
   it('maps lag and members to a status', () => {
-    expect(groupStatus({ lag: 0, members: 0 })).toBe('good')
-    expect(groupStatus({ lag: 5, members: 0 })).toBe('critical')
-    expect(groupStatus({ lag: 5, members: 2 })).toBe('warning')
-    expect(groupStatus({ lag: 50_000, members: 2 })).toBe('serious')
+    expect(groupStatus({ lag: 0, members: 0, rate: 0 })).toBe('good')
+    expect(groupStatus({ lag: 5, members: 0, rate: 0 })).toBe('critical')
+    expect(groupStatus({ lag: 5, members: 0, rate: 3 })).toBe('warning') // consumed recently
+    expect(groupStatus({ lag: 5, members: 2, rate: 0 })).toBe('warning')
+    expect(groupStatus({ lag: 50_000, members: 2, rate: 0 })).toBe('serious')
+  })
+})
+
+import { buildFlow, flowSeconds, flowWidth } from './graph'
+
+describe('buildFlow', () => {
+  const s = snap(['a', 'b'], 12)
+  s.links.push({ source: 'group:analytics', target: 'topic:clicks', kind: 'offsets', partitions: 2, rate: 4 })
+  s.nodes.push({ id: 'group:idle', kind: 'group', label: 'idle', rate: 0 })
+  const flow = buildFlow(mergeSnapshot(emptyGraph, s, 1).graph)
+
+  it('orders topics by ingress and groups by the first topic they read', () => {
+    expect(flow.topics[0].node.label).toBe('clicks')
+    expect(flow.groups.map((g) => g.node.label)).toEqual(['analytics', 'idle'])
+  })
+  it('collects leaders, members, edges and out rates', () => {
+    expect(flow.topics[0].leaders).toEqual([{ broker: 'broker 0', partitions: 2 }])
+    expect(flow.topics[0].outRate).toBe(4)
+    expect(flow.groups[0].members.map((m) => m.label)).toEqual(['a', 'b'])
+    expect(flow.groups[0].status).toBe('warning')
+    expect(flow.edges).toEqual([{ topicId: 'topic:clicks', groupId: 'group:analytics', rate: 4, partitions: 2 }])
+    expect(flow.maxRate).toBe(5)
+  })
+})
+
+describe('flow encoding', () => {
+  it('grows width and speed with rate', () => {
+    expect(flowWidth(0, 10)).toBe(1.5)
+    expect(flowWidth(10, 10)).toBe(10)
+    expect(flowWidth(1, 10)).toBeLessThan(flowWidth(5, 10))
+    expect(flowSeconds(0)).toBe(0)
+    expect(flowSeconds(100)).toBeLessThan(flowSeconds(1))
   })
 })

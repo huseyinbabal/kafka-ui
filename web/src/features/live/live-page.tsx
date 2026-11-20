@@ -1,12 +1,10 @@
 import { Link, useParams } from '@tanstack/react-router'
-import { PauseIcon, PlayIcon, RadioIcon } from 'lucide-react'
-import { useTheme } from 'next-themes'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import ForceGraph2D, { type ForceGraphMethods as Methods2D } from 'react-force-graph-2d'
-import ForceGraph3D, { type ForceGraphMethods as Methods3D } from 'react-force-graph-3d'
+import { CrownIcon, PauseIcon, PlayIcon, RadioIcon, ServerIcon, UsersIcon } from 'lucide-react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ErrorState } from '@/components/states'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -15,8 +13,13 @@ import { formatRate } from '@/features/analytics/api'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
+  buildFlow,
+  type Flow,
+  type FlowGroup,
+  type FlowTopic,
   filterGraph,
-  type GraphLink,
+  flowSeconds,
+  flowWidth,
   type GraphNode,
   type GroupStatus,
   groupStatus,
@@ -25,33 +28,15 @@ import {
 } from './graph'
 import { useLive } from './use-live'
 
-// dataviz reference palette: categorical slots for kinds, fixed status steps for group lag.
-const palettes = {
-  light: {
-    bg: '#ffffff',
-    broker: '#2a78d6',
-    member: '#6250d6',
-    topic: '#8a8a85',
-    text: '#0b0b0b',
-    link: 'rgba(82,81,78,0.35)',
-  },
-  dark: {
-    bg: '#0a0a0a',
-    broker: '#3987e5',
-    member: '#9085e9',
-    topic: '#9a9a94',
-    text: '#f0efec',
-    link: 'rgba(195,194,183,0.3)',
-  },
-}
+// dataviz status palette (fixed); always paired with a text label.
 const statusColor: Record<GroupStatus, string> = {
   good: '#0ca30c',
   warning: '#fab219',
   serious: '#ec835a',
   critical: '#d03b3b',
 }
-/** New nodes are drawn larger for this long. */
-const highlightMs = 4000
+/** New consumers are highlighted for this long. */
+const highlightMs = 6000
 
 const kindLabel: Record<NodeKind, string> = {
   broker: 'Broker',
@@ -60,44 +45,246 @@ const kindLabel: Record<NodeKind, string> = {
   member: 'Consumer',
 }
 
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
-
-function nodeSize(n: GraphNode, now: number) {
-  const base =
-    n.kind === 'broker' ? 14 : n.kind === 'group' ? 5 : n.kind === 'member' ? 1.5 : 1.5 + Math.log10(1 + n.rate) * 4 // topic: grows with ingress
-  return now - n.bornAt < highlightMs ? base * 3 : base
-}
-
-function useSize(ref: React.RefObject<HTMLDivElement | null>) {
-  const [size, setSize] = useState({ width: 800, height: 600 })
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const ro = new ResizeObserver(([e]) =>
-      setSize({ width: Math.floor(e.contentRect.width), height: Math.floor(e.contentRect.height) }),
-    )
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [ref])
-  return size
-}
-
-function Legend({ colors }: { colors: (typeof palettes)['light'] }) {
-  const dot = (c: string) => <span className="inline-block size-2.5 rounded-full" style={{ background: c }} />
+function StatusPill({ status }: { status: GroupStatus }) {
   return (
-    <div className="flex flex-col gap-1.5 text-xs">
-      <span className="flex items-center gap-2">{dot(colors.broker)} Broker (large; controller marked in details)</span>
-      <span className="flex items-center gap-2">{dot(colors.topic)} Topic (size = ingress)</span>
-      <span className="flex items-center gap-2">{dot(colors.member)} Consumer</span>
-      <span className="mt-1 text-muted-foreground">Consumer groups by lag:</span>
-      {(Object.keys(statusLabel) as GroupStatus[]).map((s) => (
-        <span key={s} className="flex items-center gap-2">
-          {dot(statusColor[s])} {statusLabel[s]}
-        </span>
-      ))}
-      <span className="mt-1 text-muted-foreground">Moving particles = messages flowing (speed ∝ rate)</span>
+    <span className="inline-flex items-center gap-1.5 text-xs">
+      <span className="size-2 rounded-full" style={{ background: statusColor[status] }} />
+      {statusLabel[status]}
+    </span>
+  )
+}
+
+function RateBar({ rate, max, label }: { rate: number; max: number; label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="w-7 text-muted-foreground">{label}</span>
+      <div className="h-1.5 flex-1 rounded-full bg-muted">
+        <div
+          className="h-1.5 rounded-full"
+          style={{
+            width: `${rate > 0 ? Math.max(4, Math.sqrt(rate / max) * 100) : 0}%`,
+            background: 'var(--series-1)',
+          }}
+        />
+      </div>
+      <span className="w-16 text-right font-mono tabular-nums">{formatRate(rate)}/s</span>
     </div>
+  )
+}
+
+function BrokerCard({ node, onSelect }: { node: GraphNode; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="flex min-w-44 flex-col gap-1 rounded-lg border-2 bg-card px-3 py-2 text-left hover:bg-accent"
+      style={{ borderColor: 'color-mix(in oklab, var(--series-1) 60%, transparent)' }}
+    >
+      <span className="flex items-center gap-2 font-medium text-sm">
+        <ServerIcon className="size-4" style={{ color: 'var(--series-1)' }} /> {node.label}
+        {node.controller && (
+          <Badge variant="secondary" className="gap-1">
+            <CrownIcon className="size-3" /> controller
+          </Badge>
+        )}
+      </span>
+      <span className="text-muted-foreground text-xs tabular-nums">
+        {node.leaders ?? 0} leaders · in {formatRate(node.rate)} msg/s
+      </span>
+    </button>
+  )
+}
+
+function TopicCard({
+  topic,
+  max,
+  onSelect,
+  refCb,
+}: {
+  topic: FlowTopic
+  max: number
+  onSelect: () => void
+  refCb: (el: HTMLElement | null) => void
+}) {
+  const n = topic.node
+  return (
+    <button
+      type="button"
+      ref={refCb}
+      onClick={onSelect}
+      className="flex w-full flex-col gap-1.5 rounded-md border bg-card px-3 py-2 text-left hover:bg-accent"
+    >
+      <span className="flex items-center gap-2">
+        <span className="truncate font-medium font-mono text-sm" title={n.label}>
+          {n.label}
+        </span>
+        {n.internal && <Badge variant="outline">internal</Badge>}
+        <span className="ml-auto shrink-0 text-muted-foreground text-xs">{n.partitions} part.</span>
+      </span>
+      <RateBar rate={n.rate} max={max} label="in" />
+      <RateBar rate={topic.outRate} max={max} label="out" />
+      {topic.leaders.length > 0 && (
+        <span className="flex flex-wrap gap-1">
+          {topic.leaders.map((l) => (
+            <span key={l.broker} className="rounded bg-muted px-1.5 text-[10px] text-muted-foreground">
+              {l.broker.replace('broker ', 'b')} ×{l.partitions}
+            </span>
+          ))}
+        </span>
+      )}
+    </button>
+  )
+}
+
+function GroupCard({
+  group,
+  now,
+  onSelect,
+  refCb,
+}: {
+  group: FlowGroup
+  now: number
+  onSelect: (n: GraphNode) => void
+  refCb: (el: HTMLElement | null) => void
+}) {
+  const n = group.node
+  const shown = group.members.slice(0, 8)
+  return (
+    <div
+      ref={refCb}
+      className="flex w-full flex-col gap-2 rounded-md border border-l-4 bg-card px-3 py-2"
+      style={{ borderLeftColor: statusColor[group.status] }}
+    >
+      <button type="button" onClick={() => onSelect(n)} className="flex items-center gap-2 text-left hover:underline">
+        <UsersIcon className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate font-medium text-sm" title={n.label}>
+          {n.label}
+        </span>
+        <Badge variant="outline" className="ml-auto shrink-0">
+          {n.state}
+        </Badge>
+      </button>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <StatusPill status={group.status} />
+        <span className="tabular-nums">lag {formatNumber(n.lag ?? 0)}</span>
+        <span className="tabular-nums">consumes {formatRate(n.rate)}/s</span>
+      </div>
+      {group.members.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {shown.map((m) => {
+            const isNew = now - m.bornAt < highlightMs
+            return (
+              <button
+                type="button"
+                key={m.id}
+                onClick={() => onSelect(m)}
+                title={`${m.label} · ${m.partitions ?? 0} partitions · ${formatRate(m.rate)}/s`}
+                className={cn(
+                  'max-w-full truncate rounded-full border px-2 py-0.5 font-mono text-[10px] hover:bg-accent',
+                  isNew && 'animate-pulse',
+                )}
+                style={
+                  isNew
+                    ? {
+                        borderColor: 'var(--series-1)',
+                        background: 'color-mix(in oklab, var(--series-1) 15%, transparent)',
+                      }
+                    : undefined
+                }
+              >
+                {isNew && <span className="mr-1 font-sans font-semibold">new</span>}
+                {m.clientId}@{m.host}
+              </button>
+            )
+          })}
+          {group.members.length > shown.length && (
+            <span className="text-muted-foreground text-xs">+{group.members.length - shown.length} more</span>
+          )}
+        </div>
+      ) : (
+        <span className="text-muted-foreground text-xs">no active consumers</span>
+      )}
+    </div>
+  )
+}
+
+type Path = { key: string; d: string; width: number; seconds: number; label?: { x: number; y: number; text: string } }
+type Paths = { ingress: Path[]; flows: Path[]; width: number; height: number }
+
+/** Measures card positions and returns SVG paths for ingress arrows and topic → group flows. */
+function useFlowPaths(
+  container: React.RefObject<HTMLDivElement | null>,
+  els: React.RefObject<Map<string, HTMLElement>>,
+  flow: Flow,
+): Paths {
+  const [paths, setPaths] = useState<Paths>({ ingress: [], flows: [], width: 0, height: 0 })
+  const measure = useCallback(() => {
+    const root = container.current
+    if (!root) return
+    const box = root.getBoundingClientRect()
+    const rect = (id: string) => {
+      const el = els.current.get(id)
+      if (!el) return undefined
+      const r = el.getBoundingClientRect()
+      return { left: r.left - box.left, right: r.right - box.left, mid: r.top - box.top + r.height / 2 }
+    }
+    const ingress: Path[] = []
+    for (const t of flow.topics) {
+      const r = rect(t.node.id)
+      if (!r) continue
+      const w = flowWidth(t.node.rate, flow.maxRate)
+      ingress.push({
+        key: `in:${t.node.id}`,
+        d: `M 16 ${r.mid} L ${r.left - 6} ${r.mid}`,
+        width: w,
+        seconds: flowSeconds(t.node.rate),
+        label: t.node.rate > 0 ? { x: 16, y: r.mid - w / 2 - 5, text: `${formatRate(t.node.rate)}/s` } : undefined,
+      })
+    }
+    const flows: Path[] = []
+    for (const e of flow.edges) {
+      const a = rect(e.topicId)
+      const b = rect(e.groupId)
+      if (!a || !b) continue
+      const x1 = a.right + 2
+      const x2 = b.left - 6
+      const cx = (x1 + x2) / 2
+      flows.push({
+        key: `${e.topicId}->${e.groupId}`,
+        d: `M ${x1} ${a.mid} C ${cx} ${a.mid}, ${cx} ${b.mid}, ${x2} ${b.mid}`,
+        width: flowWidth(e.rate, flow.maxRate),
+        seconds: flowSeconds(e.rate),
+        label: e.rate > 0 ? { x: cx, y: (a.mid + b.mid) / 2 - 8, text: `${formatRate(e.rate)}/s` } : undefined,
+      })
+    }
+    setPaths({ ingress, flows, width: root.scrollWidth, height: root.scrollHeight })
+  }, [container, els, flow])
+
+  useLayoutEffect(() => {
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (container.current) ro.observe(container.current)
+    return () => ro.disconnect()
+  }, [measure, container])
+  return paths
+}
+
+function FlowPath({ p, active }: { p: Path; active: boolean }) {
+  return (
+    <>
+      <path d={p.d} fill="none" stroke="var(--border)" strokeWidth={Math.max(p.width, 1.5)} strokeLinecap="round" />
+      {p.seconds > 0 && (
+        <path
+          d={p.d}
+          fill="none"
+          stroke="var(--series-1)"
+          strokeWidth={p.width}
+          strokeLinecap="round"
+          className={cn('flow-dash', !active && 'flow-dash-paused')}
+          style={{ animationDuration: `${p.seconds}s` }}
+        />
+      )}
+    </>
   )
 }
 
@@ -142,13 +329,6 @@ function NodeDetails({ clusterId, node }: { clusterId: string; node: GraphNode }
           {row('Lag', formatNumber(node.lag ?? 0))}
           {row('Status', statusLabel[groupStatus(node)])}
           {row('Consumed', `${formatRate(node.rate)} msg/s`)}
-          <Link
-            to="/clusters/$clusterId/groups/$group"
-            params={{ clusterId, group: node.label }}
-            className="mt-3 text-sm hover:underline"
-          >
-            Open group →
-          </Link>
         </>
       )}
       {node.kind === 'member' && (
@@ -159,14 +339,16 @@ function NodeDetails({ clusterId, node }: { clusterId: string; node: GraphNode }
           {row('Assigned partitions', node.partitions ?? 0)}
           {row('Lag', formatNumber(node.lag ?? 0))}
           {row('Consumed', `${formatRate(node.rate)} msg/s`)}
-          <Link
-            to="/clusters/$clusterId/groups/$group"
-            params={{ clusterId, group: node.group ?? '' }}
-            className="mt-3 text-sm hover:underline"
-          >
-            Open group →
-          </Link>
         </>
+      )}
+      {(node.kind === 'group' || node.kind === 'member') && (
+        <Link
+          to="/clusters/$clusterId/groups/$group"
+          params={{ clusterId, group: node.kind === 'group' ? node.label : (node.group ?? '') }}
+          className="mt-3 text-sm hover:underline"
+        >
+          Open group →
+        </Link>
       )}
     </div>
   )
@@ -174,116 +356,47 @@ function NodeDetails({ clusterId, node }: { clusterId: string; node: GraphNode }
 
 export function LivePage() {
   const { clusterId } = useParams({ from: '/clusters/$clusterId/live' })
-  const { resolvedTheme } = useTheme()
-  const colors = palettes[resolvedTheme === 'light' ? 'light' : 'dark']
-  const [mode, setMode] = useState<'3d' | '2d'>('3d')
   const [paused, setPaused] = useState(false)
   const [hideInternal, setHideInternal] = useState(true)
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const live = useLive(clusterId, paused)
-  const box = useRef<HTMLDivElement>(null)
-  const { width, height } = useSize(box)
-  const fg3 = useRef<Methods3D<GraphNode, GraphLink> | undefined>(undefined)
-  const fg2 = useRef<Methods2D<GraphNode, GraphLink> | undefined>(undefined)
-  // Fit the view once after the first layout settles (and again after switching 2D/3D).
-  const fitted = useRef(false)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refit when the mode changes
-  useEffect(() => {
-    fitted.current = false
-  }, [mode, clusterId, query, hideInternal])
-  const onEngineStop = useCallback(() => {
-    if (fitted.current) return
-    fitted.current = true
-    fg3.current?.zoomToFit(600, 40)
-    fg2.current?.zoomToFit(600, 40)
-  }, [])
 
-  // New data for the layout only when the structure or the filter changes, so
-  // ordinary updates don't reheat the simulation.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: live.structure is the change signal for the mutable graph
-  const data = useMemo(() => filterGraph(live.graph, { hideInternal, query }), [live.structure, hideInternal, query])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is the change signal for the mutable graph
+  const flow = useMemo(
+    () => buildFlow(filterGraph(live.graph, { hideInternal, query })),
+    [live.version, hideInternal, query],
+  )
   const selected = selectedId ? live.graph.nodes.find((n) => n.id === selectedId) : undefined
+  const now = live.lastAt || Date.now()
 
-  // Accessors change identity on every snapshot so colors and sizes refresh.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version re-evaluates mutated nodes
-  const nodeColor = useCallback(
-    (n: GraphNode) =>
-      n.kind === 'group'
-        ? statusColor[groupStatus(n)]
-        : n.kind === 'broker'
-          ? colors.broker
-          : n.kind === 'member'
-            ? colors.member
-            : colors.topic,
-    [live.version, colors],
-  )
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version re-evaluates mutated nodes
-  const nodeVal = useCallback((n: GraphNode) => nodeSize(n, Date.now()), [live.version])
-  const nodeLabel = useCallback(
-    (n: GraphNode) =>
-      `<div style="font: 12px system-ui; padding: 2px 4px"><b>${escapeHtml(n.label)}</b><br/>${kindLabel[n.kind]}${
-        n.kind === 'group' ? ` · lag ${formatNumber(n.lag ?? 0)} · ${statusLabel[groupStatus(n)]}` : ''
-      }${n.rate > 0 ? ` · ${formatRate(n.rate)} msg/s` : ''}${n.controller ? ' · controller' : ''}</div>`,
-    [],
-  )
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version re-evaluates mutated links
-  const particles = useCallback(
-    (l: GraphLink) => (l.kind !== 'offsets' && l.rate > 0 ? Math.min(4, 1 + Math.floor(Math.log10(1 + l.rate))) : 0),
-    [live.version],
-  )
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version re-evaluates mutated links
-  const particleSpeed = useCallback((l: GraphLink) => 0.002 + (Math.min(l.rate, 200) / 200) * 0.012, [live.version])
-  const linkWidth = useCallback(
-    (l: GraphLink) => (l.kind === 'consumes' ? 0.6 + Math.min(l.partitions, 10) * 0.15 : 0.3),
-    [],
-  )
-  const onNodeClick = useCallback((n: GraphNode) => setSelectedId(n.id), [])
-
-  const drawLabel = useCallback(
-    (n: GraphNode, ctx: CanvasRenderingContext2D, scale: number) => {
-      if (n.kind === 'member' || (n.kind === 'topic' && scale < 2)) return
-      const size = Math.max(10 / scale, 2)
-      ctx.font = `${size}px system-ui`
-      ctx.fillStyle = colors.text
-      ctx.textAlign = 'center'
-      ctx.fillText(n.label, n.x ?? 0, (n.y ?? 0) + Math.sqrt(nodeSize(n, Date.now())) * 4 + size)
-    },
-    [colors],
-  )
-
-  const counts = useMemo(() => {
-    const c: Record<NodeKind, number> = { broker: 0, topic: 0, group: 0, member: 0 }
-    for (const n of data.nodes) c[n.kind]++
-    return c
-  }, [data])
-
-  const common = {
-    graphData: data,
-    width,
-    height,
-    backgroundColor: colors.bg,
-    nodeId: 'id',
-    nodeLabel,
-    nodeColor,
-    nodeVal,
-    nodeRelSize: 3,
-    linkColor: () => colors.link,
-    linkWidth,
-    linkDirectionalParticles: particles,
-    linkDirectionalParticleSpeed: particleSpeed,
-    linkDirectionalParticleWidth: 1.6,
-    linkDirectionalParticleColor: (l: GraphLink) => (l.kind === 'leader' ? colors.broker : colors.member),
-    onNodeClick,
-    cooldownTicks: 120,
-    onEngineStop,
-    warmupTicks: 20,
-  }
+  const container = useRef<HTMLDivElement>(null)
+  const els = useRef(new Map<string, HTMLElement>())
+  const refs = useRef(new Map<string, (el: HTMLElement | null) => void>())
+  // Stable ref callbacks per id, so React doesn't detach/attach them on every render.
+  const setEl = useCallback((id: string) => {
+    let cb = refs.current.get(id)
+    if (!cb) {
+      cb = (el) => {
+        if (el) els.current.set(id, el)
+        else els.current.delete(id)
+      }
+      refs.current.set(id, cb)
+    }
+    return cb
+  }, [])
+  const paths = useFlowPaths(container, els, flow)
+  const totalIn = flow.topics.reduce((s, t) => s + t.node.rate, 0)
+  const totalOut = flow.groups.reduce((s, g) => s + g.node.rate, 0)
 
   return (
-    <div className="flex h-[calc(100svh-7rem)] flex-col gap-3">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto font-semibold text-2xl tracking-tight">Live topology</h1>
+        <span className="text-sm tabular-nums">
+          <span className="text-muted-foreground">produced</span> {formatRate(totalIn)} msg/s ·{' '}
+          <span className="text-muted-foreground">consumed</span> {formatRate(totalOut)} msg/s
+        </span>
         <span className="flex items-center gap-1.5 text-muted-foreground text-xs" aria-live="polite">
           <RadioIcon
             className={cn('size-3.5', live.status === 'live' && !paused && 'animate-pulse text-emerald-500')}
@@ -294,28 +407,8 @@ export function LivePage() {
               ? `updated ${new Date(live.lastAt).toLocaleTimeString()}`
               : live.status}
         </span>
-        <span className="text-muted-foreground text-xs tabular-nums">
-          {counts.broker} brokers · {counts.topic} topics · {counts.group} groups · {counts.member} consumers
-        </span>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <fieldset className="inline-flex rounded-md border p-0.5">
-          <legend className="sr-only">View</legend>
-          {(['3d', '2d'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() => setMode(m)}
-              className={cn(
-                'rounded px-2.5 py-1 font-medium text-xs uppercase',
-                mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {m}
-            </button>
-          ))}
-        </fieldset>
         <Input
           aria-label="Filter by topic, group or consumer"
           placeholder="Filter by topic, group or consumer…"
@@ -332,48 +425,116 @@ export function LivePage() {
         <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
           {paused ? <PlayIcon /> : <PauseIcon />} {paused ? 'Resume' : 'Pause'}
         </Button>
+        <span className="ml-auto flex flex-wrap items-center gap-3 text-muted-foreground text-xs">
+          <span>Line width and speed = msg/s</span>
+          {(Object.keys(statusLabel) as GroupStatus[]).map((s) => (
+            <StatusPill key={s} status={s} />
+          ))}
+        </span>
       </div>
       {live.status === 'error' && live.error && <ErrorState error={live.error} title="Live updates interrupted" />}
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border">
-        <div ref={box} className="absolute inset-0">
-          {mode === '3d' ? (
-            <ForceGraph3D<GraphNode, GraphLink> ref={fg3} {...common} nodeResolution={10} nodeOpacity={0.95} />
-          ) : (
-            <ForceGraph2D<GraphNode, GraphLink>
-              ref={fg2}
-              {...common}
-              nodeCanvasObjectMode={() => 'after'}
-              nodeCanvasObject={drawLabel}
-            />
-          )}
-        </div>
-        <details className="absolute bottom-3 left-3 rounded-md border bg-background/85 p-3 backdrop-blur" open>
-          <summary className="cursor-pointer font-medium text-sm">Legend</summary>
-          <div className="mt-2">
-            <Legend colors={colors} />
-          </div>
-        </details>
-        <div className="absolute top-3 right-3 max-h-[45%] w-72 overflow-y-auto rounded-md border bg-background/85 p-3 text-xs backdrop-blur">
-          <p className="mb-1.5 font-medium text-sm">Recent changes</p>
-          {live.changes.length === 0 ? (
-            <p className="text-muted-foreground">Consumers joining or leaving appear here.</p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {live.changes.map((c) => (
-                <li key={`${c.at}-${c.kind}-${c.node.id}`} className="flex items-start gap-1.5">
-                  <Badge variant={c.kind === 'joined' ? 'secondary' : 'outline'} className="shrink-0">
-                    {c.kind}
-                  </Badge>
-                  <span className="min-w-0 break-all">
-                    {c.node.kind === 'member' ? `${c.node.label} → ${c.node.group}` : `group ${c.node.label}`}
-                    <span className="block text-muted-foreground">{new Date(c.at).toLocaleTimeString()}</span>
-                  </span>
-                </li>
+
+      <section aria-label="Brokers" className="flex flex-wrap gap-3">
+        {flow.brokers.map((b) => (
+          <BrokerCard key={b.id} node={b} onSelect={() => setSelectedId(b.id)} />
+        ))}
+      </section>
+
+      <div className="grid gap-4 2xl:grid-cols-[1fr_18rem]">
+        <div className="overflow-x-auto rounded-lg border">
+          <div ref={container} className="relative min-w-[46rem] p-4">
+            <svg
+              className="pointer-events-none absolute inset-0"
+              width={paths.width}
+              height={paths.height}
+              aria-hidden="true"
+            >
+              {paths.ingress.map((p) => (
+                <FlowPath key={p.key} p={p} active={!paused} />
               ))}
-            </ul>
-          )}
+              {paths.flows.map((p) => (
+                <FlowPath key={p.key} p={p} active={!paused} />
+              ))}
+              {[...paths.ingress, ...paths.flows].map(
+                (p) =>
+                  p.label && (
+                    <text
+                      key={`label:${p.key}`}
+                      x={p.label.x}
+                      y={p.label.y}
+                      textAnchor={p.key.startsWith('in:') ? 'start' : 'middle'}
+                      className="fill-foreground font-mono text-[11px]"
+                      style={{ paintOrder: 'stroke', stroke: 'var(--background)', strokeWidth: 4 }}
+                    >
+                      {p.label.text}
+                    </text>
+                  ),
+              )}
+            </svg>
+            <div className="relative grid grid-cols-[6rem_16rem_minmax(6rem,1fr)_minmax(18rem,22rem)] gap-y-3">
+              <div className="col-start-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                Produced
+              </div>
+              <div className="col-start-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                Topics
+              </div>
+              <div className="col-start-4 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                Consumer groups
+              </div>
+              <div className="col-start-2 row-start-2 flex flex-col gap-3">
+                {flow.topics.length === 0 && <p className="text-muted-foreground text-sm">No topics match.</p>}
+                {flow.topics.map((t) => (
+                  <TopicCard
+                    key={t.node.id}
+                    topic={t}
+                    max={flow.maxRate}
+                    onSelect={() => setSelectedId(t.node.id)}
+                    refCb={setEl(t.node.id)}
+                  />
+                ))}
+              </div>
+              <div className="col-start-4 row-start-2 flex flex-col gap-3">
+                {flow.groups.length === 0 && <p className="text-muted-foreground text-sm">No consumer groups match.</p>}
+                {flow.groups.map((g) => (
+                  <GroupCard
+                    key={g.node.id}
+                    group={g}
+                    now={now}
+                    onSelect={(n) => setSelectedId(n.id)}
+                    refCb={setEl(g.node.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
+
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle>Recent changes</CardTitle>
+          </CardHeader>
+          <CardContent className="max-h-[60vh] overflow-y-auto text-xs">
+            {live.changes.length === 0 ? (
+              <p className="text-muted-foreground">Consumers joining or leaving appear here.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {live.changes.map((c) => (
+                  <li key={`${c.at}-${c.kind}-${c.node.id}`} className="flex items-start gap-1.5">
+                    <Badge variant={c.kind === 'joined' ? 'secondary' : 'outline'} className="shrink-0">
+                      {c.kind}
+                    </Badge>
+                    <span className="min-w-0 break-all">
+                      {c.node.kind === 'member' ? `${c.node.label} → ${c.node.group}` : `group ${c.node.label}`}
+                      <span className="block text-muted-foreground">{new Date(c.at).toLocaleTimeString()}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
       <Sheet open={!!selected} onOpenChange={(o) => !o && setSelectedId(null)}>
         <SheetContent>
           {selected && (
