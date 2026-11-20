@@ -1,6 +1,37 @@
+# The image only needs go.mod/go.sum, cmd/, internal/, web/embed.go and the web app sources.
 .git
+.github
+.cover
+coverage*.out
 bin
-web/node_modules
-web/dist
 *.db
 *.db-*
+config.yaml
+.env
+.env.*
+.DS_Store
+.idea
+.vscode
+
+# Docs site, specs and deployment manifests are not part of the image.
+docs
+deploy
+*.md
+Makefile
+
+# Go-only tests: integration tests never run in the image build.
+internal/itest
+
+# Web: dependencies and build output are recreated in the build stage;
+# tests, E2E, demo recording and their outputs are not needed.
+web/node_modules
+web/dist
+web/e2e
+web/demo
+web/test-results
+web/playwright-report
+web/playwright.config.ts
+web/playwright.demo.config.ts
+web/vitest.config.ts
+web/**/*.test.ts
+web/**/*.test.tsx

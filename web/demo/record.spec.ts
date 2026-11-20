@@ -2,7 +2,7 @@ import { type Page, test } from '@playwright/test'
 
 /**
  * A guided tour for the README. Run against a cluster with traffic
- * (`make kind-traffic`), then `make demo` turns the video into docs/demo.gif.
+ * (`make kind-traffic`), then `make demo` turns the video into docs/public/demo.gif.
  */
 const cluster = process.env.KAFKAUI_E2E_CLUSTER ?? 'orders'
 const pause = (page: Page, ms: number) => page.waitForTimeout(ms)

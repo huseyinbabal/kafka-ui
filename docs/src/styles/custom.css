@@ -1,0 +1,49 @@
+/* Match the app's accent (dataviz series-1 blue) in both themes. */
+:root {
+  --sl-color-accent-low: #0d2a4d;
+  --sl-color-accent: #3987e5;
+  --sl-color-accent-high: #cde2fb;
+  --sl-font: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #cde2fb;
+  --sl-color-accent: #2a78d6;
+  --sl-color-accent-high: #104281;
+}
+.hero img {
+  border-radius: 0.75rem;
+  border: 1px solid var(--sl-color-gray-5);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.25);
+}
+.screenshot {
+  border-radius: 0.5rem;
+  border: 1px solid var(--sl-color-gray-5);
+}
+
+/* Splash hero: centered text with the wide demo below it. */
+@media (min-width: 50rem) {
+  .hero {
+    grid-template-columns: 1fr;
+    text-align: center;
+    padding-block: 2.5rem 1rem;
+  }
+  .hero > img,
+  .hero > .hero-html {
+    order: 2;
+    width: min(100%, 72rem);
+    margin-inline: auto;
+  }
+  .hero .sl-flex {
+    align-items: center;
+  }
+  .hero .actions {
+    justify-content: center;
+  }
+}
+.hero h1 {
+  white-space: nowrap;
+}
+.hero .tagline {
+  max-width: 44rem;
+  margin-inline: auto;
+}

@@ -26,7 +26,14 @@ import (
 	"github.com/huseyinbabal/kafka-ui/web"
 )
 
+// version is set at build time (-ldflags "-X main.version=v1.2.3").
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
+		fmt.Println(version)
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "hash-password" {
 		if err := hashPassword(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -110,7 +117,7 @@ func run() error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.Server.Addr, "clusters", len(cfg.Clusters))
+		log.Info("listening", "addr", cfg.Server.Addr, "clusters", len(cfg.Clusters), "version", version)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}

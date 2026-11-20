@@ -224,6 +224,8 @@ web/src/features/<x>/    one folder per area (topics, messages, groups, acls, sc
 web/src/components/ui/   generated shadcn primitives
 web/e2e/                 Playwright specs
 deploy/                  Kubernetes manifests (deploy/k8s) and local dev helpers (deploy/kind)
+docs/                    documentation site (Starlight), published to GitHub Pages
+.github/workflows/       CI, release image, docs
 ```
 
 ## 4. API conventions
@@ -310,6 +312,13 @@ func (s *Server) createTopic(w http.ResponseWriter, r *http.Request) {
 - **Coverage target:** ≥ 80% (unit + integration) for `internal/kafka`, `internal/serde`, `internal/analytics` and `internal/auth`.
 - **E2E tests** only create and change resources whose names start with `e2e-`. They log in once per role, because logins are rate-limited.
 - A bug fix starts with a failing test.
+- CI (GitHub Actions) runs on every pull request:
+  - Go lint and unit tests
+  - integration tests
+  - web lint, type check, tests and build
+  - docs build
+  - a Docker build check
+- Publishing a GitHub release pushes a multi-arch image to `ghcr.io`. The documentation site in `docs/` (Starlight) is published to GitHub Pages from `main`.
 
 ## 8. Contributing rules
 

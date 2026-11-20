@@ -1,0 +1,44 @@
+---
+title: kafka-ui
+description: A fast, single-binary web UI for Apache Kafka.
+template: splash
+hero:
+  tagline: A fast, single-binary web UI for Apache Kafka. Browse messages, follow consumer lag, manage ACLs and schemas, and watch data flow through your cluster, live.
+  image:
+    html: '<img src="/kafka-ui/demo.gif" alt="kafka-ui demo: message browser, consumer groups, analytics and the live topology view" width="1100" height="688" />'
+  actions:
+    - text: Quick start
+      link: /kafka-ui/getting-started/quick-start/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/huseyinbabal/kafka-ui
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components'
+
+<CardGrid>
+  <Card title="Live topology" icon="random">
+    Brokers, topics and consumer groups laid out as a flow. Line width and motion follow msg/s; consumers joining or
+    leaving are highlighted as it happens.
+  </Card>
+  <Card title="Message browser" icon="magnifier">
+    Seek by offset or time, tail live, filter with regex on the server, and decode Avro, Protobuf and JSON Schema
+    through Schema Registry.
+  </Card>
+  <Card title="Consumer lag" icon="warning">
+    Per-partition lag, lag trends, and a "catch up in" estimate for every group. Offset resets with a mandatory
+    preview.
+  </Card>
+  <Card title="Analytics" icon="seti:graphql">
+    Throughput, top topics, partition skew and hygiene checks, sampled in the background and kept for 7 days.
+  </Card>
+  <Card title="Safe by default" icon="approve-check">
+    `admin` and `viewer` roles, read-only clusters, protected internal topics, typed confirmations and an audit log.
+  </Card>
+  <Card title="Any Kafka" icon="puzzle">
+    Talks only the Kafka protocol (3.x+, KRaft or ZooKeeper). Single Go binary with the UI embedded and SQLite for
+    state.
+  </Card>
+</CardGrid>

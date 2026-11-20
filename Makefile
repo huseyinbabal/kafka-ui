@@ -32,9 +32,9 @@ coverage:
 e2e:
 	cd web && bunx playwright install chromium && bunx playwright test
 
-# Re-record docs/demo.gif from a running instance with traffic (make kind-traffic).
+# Re-record docs/public/demo.gif from a running instance with traffic (make kind-traffic).
 demo:
-	cd web && rm -rf demo/out && bunx playwright test -c playwright.demo.config.ts && ./demo/to-gif.sh ../docs/demo.gif
+	cd web && rm -rf demo/out && bunx playwright test -c playwright.demo.config.ts && ./demo/to-gif.sh ../docs/public/demo.gif
 
 test-integration:
 	go test -race -tags=integration -timeout 15m -coverpkg=./internal/... -coverprofile=coverage-integration.out ./internal/itest/
