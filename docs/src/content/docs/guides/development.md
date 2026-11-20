@@ -57,7 +57,7 @@ GitHub Actions run these workflows:
 | Workflow | When | What |
 |---|---|---|
 | CI | every pull request and push to `main` | Go lint and unit tests, integration tests, web lint/type check/tests/build, docs build, and a Docker build check |
-| Release image | a GitHub release is published | a multi-arch image (`linux/amd64`, `linux/arm64`) pushed to `ghcr.io/huseyinbabal/kafka-ui` |
+| Release | a GitHub release is published | a multi-arch image (`linux/amd64`, `linux/arm64`) pushed to `ghcr.io/huseyinbabal/kafka-ui`; binaries for Linux, macOS and Windows (amd64, arm64), `release.yaml` and `checksums.txt` attached to the release |
 | Docs | push to `main` that changes `docs/` | build this site and publish it to GitHub Pages |
 
 To release, publish a GitHub release with a tag like `v1.2.0`. The image is then tagged:
@@ -67,7 +67,7 @@ To release, publish a GitHub release with a tag like `v1.2.0`. The image is then
 - `1` (not for `0.x` releases)
 - `latest` (not for prereleases)
 
-`kafka-ui version` prints the release tag.
+`kafka-ui version` prints the release tag. The Kubernetes manifest comes from `deploy/release/kafka-ui.yaml`, rendered with the release's image tag by `deploy/release/render.sh`. To rebuild an existing release, run the Release workflow by hand with its tag.
 
 ```sh
 docker pull ghcr.io/huseyinbabal/kafka-ui:latest

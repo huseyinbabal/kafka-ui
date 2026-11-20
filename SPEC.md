@@ -223,7 +223,7 @@ internal/itest/          integration tests (build tag: integration)
 web/src/features/<x>/    one folder per area (topics, messages, groups, acls, schemas, analytics, live…)
 web/src/components/ui/   generated shadcn primitives
 web/e2e/                 Playwright specs
-deploy/                  Kubernetes manifests (deploy/k8s) and local dev helpers (deploy/kind)
+deploy/                  release manifest template (deploy/release), example/dev manifests (deploy/k8s), kind helpers (deploy/kind)
 docs/                    documentation site (Starlight), published to GitHub Pages
 .github/workflows/       CI, release image, docs
 ```
@@ -318,7 +318,10 @@ func (s *Server) createTopic(w http.ResponseWriter, r *http.Request) {
   - web lint, type check, tests and build
   - docs build
   - a Docker build check
-- Publishing a GitHub release pushes a multi-arch image to `ghcr.io`. The documentation site in `docs/` (Starlight) is published to GitHub Pages from `main`.
+- Publishing a GitHub release:
+  - pushes a multi-arch image to `ghcr.io`
+  - attaches binaries for Linux, macOS and Windows (amd64, arm64) and `checksums.txt`
+  - attaches `release.yaml`, a Kubernetes manifest rendered from `deploy/release/kafka-ui.yaml`. It never contains the user's config Secret, so upgrades can't overwrite it. The documentation site in `docs/` (Starlight) is published to GitHub Pages from `main`.
 
 ## 8. Contributing rules
 

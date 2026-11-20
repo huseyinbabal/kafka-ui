@@ -22,6 +22,27 @@ To build the image yourself, run `docker build -t kafka-ui .` in a clone of the 
 
 The image runs as a non-root user. Sessions and analytics are written to the `/data` volume, so keep that volume if you want analytics history to survive restarts.
 
+## Binary
+
+Download the archive for your platform from the [latest release](https://github.com/huseyinbabal/kafka-ui/releases/latest). Builds are available for Linux, macOS and Windows, on amd64 and arm64. Each archive contains the `kafka-ui` binary and `config.example.yaml`.
+
+```sh
+tar xzf kafka-ui_*_linux_amd64.tar.gz && cd kafka-ui_*_linux_amd64
+cp config.example.yaml config.yaml   # point `clusters` at your brokers
+./kafka-ui -config config.yaml
+```
+
+Verify downloads against `checksums.txt` in the release.
+
+## Kubernetes
+
+```sh
+kubectl apply -f https://github.com/huseyinbabal/kafka-ui/releases/latest/download/release.yaml
+kubectl -n kafka-ui create secret generic kafka-ui-config --from-file=config.yaml
+```
+
+See [Kubernetes](/kafka-ui/getting-started/kubernetes/) for credentials, upgrades and ingress.
+
 ## From source
 
 You need Go 1.27+ and [Bun](https://bun.sh) 1.3+.

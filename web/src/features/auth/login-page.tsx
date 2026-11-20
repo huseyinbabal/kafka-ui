@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Loader2Icon, WorkflowIcon } from 'lucide-react'
+import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -24,10 +24,8 @@ export function LoginPage() {
     <div className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mx-auto mb-2 flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <WorkflowIcon className="size-5" />
-          </div>
-          <CardTitle className="text-xl">Kafka UI</CardTitle>
+          <img src="/logo.svg" alt="" className="mx-auto mb-2 size-12" />
+          <CardTitle className="text-xl">kafka-ui</CardTitle>
           <CardDescription>Sign in to continue</CardDescription>
         </CardHeader>
         <CardContent>

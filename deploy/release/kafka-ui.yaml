@@ -1,0 +1,112 @@
+# kafka-ui __VERSION__
+#
+# Install or upgrade:
+#   kubectl apply -f https://github.com/huseyinbabal/kafka-ui/releases/download/__VERSION__/release.yaml
+#
+# This manifest does not contain your configuration, so re-applying a newer release never
+# overwrites it. Create it once (the pod waits for it):
+#   kubectl -n kafka-ui create secret generic kafka-ui-config --from-file=config.yaml
+# Optional: credentials referenced as ${VAR} in config.yaml can live in a second secret:
+#   kubectl -n kafka-ui create secret generic kafka-ui-env --from-literal=KAFKA_PASSWORD=...
+#
+# Docs: https://huseyinbabal.github.io/kafka-ui/getting-started/kubernetes/
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-ui
+  labels:
+    app.kubernetes.io/name: kafka-ui
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-ui-data
+  namespace: kafka-ui
+  labels:
+    app.kubernetes.io/name: kafka-ui
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+  namespace: kafka-ui
+  labels:
+    app.kubernetes.io/name: kafka-ui
+    app.kubernetes.io/version: "__VERSION__"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # sessions and analytics live in SQLite on a ReadWriteOnce volume
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-ui
+        app.kubernetes.io/version: "__VERSION__"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kafka-ui
+          image: ghcr.io/huseyinbabal/kafka-ui:__IMAGE_TAG__
+          args: ["-config", "/etc/kafka-ui/config.yaml", "-log-format", "json"]
+          envFrom:
+            - secretRef:
+                name: kafka-ui-env
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kafka-ui
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          secret:
+            secretName: kafka-ui-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: kafka-ui-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+  namespace: kafka-ui
+  labels:
+    app.kubernetes.io/name: kafka-ui
+spec:
+  selector:
+    app.kubernetes.io/name: kafka-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

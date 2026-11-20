@@ -13,7 +13,6 @@ import {
   ShieldIcon,
   SunIcon,
   UsersIcon,
-  WorkflowIcon,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import type { ComponentType } from 'react'
@@ -88,9 +87,7 @@ function ClusterSwitcher({ clusterId }: { clusterId: string }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
-          <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <WorkflowIcon className="size-4" />
-          </div>
+          <img src="/logo.svg" alt="" className="size-8 shrink-0" />
           <div className="grid flex-1 text-left text-sm leading-tight">
             <span className="truncate font-semibold">{current?.name ?? clusterId}</span>
             <span className="flex items-center gap-1.5 truncate text-muted-foreground text-xs">
