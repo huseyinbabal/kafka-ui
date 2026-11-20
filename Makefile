@@ -4,6 +4,12 @@ IMAGE        ?= kafka-ui:dev
 
 .PHONY: demo e2e coverage kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
 
+# go:embed needs web/dist to contain a file. The real UI comes from `make web-build`;
+# this placeholder lets Go build, lint and test on a fresh clone.
+web/dist/index.html:
+	mkdir -p web/dist
+	printf '<!doctype html><title>kafka-ui</title><p>UI not built: run make web-build.</p>\n' > $@
+
 setup:
 	go mod download
 	cd web && bun install
@@ -17,12 +23,12 @@ build: web-build
 image:
 	docker build -t $(IMAGE) .
 
-test:
+test: web/dist/index.html
 	go test -race ./...
 	cd web && bun run test
 
 # Unit + integration coverage merged per package (target: >= 80% for kafka, serde, analytics, auth).
-coverage:
+coverage: web/dist/index.html
 	rm -rf .cover && mkdir -p .cover/unit .cover/it
 	go test -cover -coverpkg=./internal/... ./internal/... -args -test.gocoverdir=$(CURDIR)/.cover/unit
 	go test -tags=integration -timeout 15m -cover -coverpkg=./internal/... ./internal/itest/ -args -test.gocoverdir=$(CURDIR)/.cover/it
@@ -36,10 +42,10 @@ e2e:
 demo:
 	cd web && rm -rf demo/out && bunx playwright test -c playwright.demo.config.ts && ./demo/to-gif.sh ../docs/public/demo.gif
 
-test-integration:
+test-integration: web/dist/index.html
 	go test -race -tags=integration -timeout 15m -coverpkg=./internal/... -coverprofile=coverage-integration.out ./internal/itest/
 
-lint:
+lint: web/dist/index.html
 	go vet ./...
 	golangci-lint run ./...
 	cd web && bunx biome check . && bunx tsc -b
