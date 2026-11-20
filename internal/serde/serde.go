@@ -62,6 +62,9 @@ func (d Decoder) Decode(b []byte, f Format, maxText int) *Payload {
 	if b == nil {
 		return nil
 	}
+	if f == "" {
+		f = Auto
+	}
 	_, wire := wireSchemaID(b)
 	if f != Schema && (f != Auto || !wire || d.Registry == nil) {
 		return Decode(b, f, maxText)
@@ -90,7 +93,7 @@ func Decode(b []byte, f Format, maxText int) *Payload {
 	if b == nil {
 		return nil
 	}
-	if f == Auto {
+	if f == Auto || f == "" {
 		f = detect(b)
 	}
 	p := &Payload{Format: f, Size: len(b)}

@@ -2,7 +2,7 @@ KIND_CLUSTER ?= kafkatr
 KCTX         ?= kind-$(KIND_CLUSTER)
 IMAGE        ?= kafka-ui:dev
 
-.PHONY: kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
+.PHONY: coverage kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
 
 setup:
 	go mod download
@@ -21,8 +21,15 @@ test:
 	go test -race ./...
 	cd web && bun run test
 
+# Unit + integration coverage merged per package (target: >= 80% for kafka, serde, analytics, auth).
+coverage:
+	rm -rf .cover && mkdir -p .cover/unit .cover/it
+	go test -cover -coverpkg=./internal/... ./internal/... -args -test.gocoverdir=$(CURDIR)/.cover/unit
+	go test -tags=integration -timeout 15m -cover -coverpkg=./internal/... ./internal/itest/ -args -test.gocoverdir=$(CURDIR)/.cover/it
+	go tool covdata percent -i=.cover/unit,.cover/it
+
 test-integration:
-	go test -race -tags=integration ./...
+	go test -race -tags=integration -timeout 15m -coverpkg=./internal/... -coverprofile=coverage-integration.out ./internal/itest/
 
 lint:
 	go vet ./...

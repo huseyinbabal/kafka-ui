@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,5 +95,43 @@ func TestRateLimiter(t *testing.T) {
 	r.now = func() time.Time { return now.Add(time.Minute) }
 	if !r.Allow("ip") {
 		t.Fatal("window reset")
+	}
+}
+
+func TestPurgeExpired(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	token, _, err := s.Login(ctx, "alice", "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeExpired(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Authenticate(ctx, token); err != nil {
+		t.Fatalf("fresh session must survive a purge: %v", err)
+	}
+	later := time.Now().Add(2 * time.Hour)
+	s.now = func() time.Time { return later }
+	if err := s.PurgeExpired(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("idle session must be purged, %d left", n)
+	}
+}
+
+func TestHashPassword(t *testing.T) {
+	h, err := HashPassword("s3cret")
+	if err != nil || !strings.HasPrefix(h, "$2") {
+		t.Fatalf("hash: %q %v", h, err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(h), []byte("s3cret")) != nil {
+		t.Fatal("hash must verify")
+	}
+	if _, err := HashPassword(""); err == nil {
+		t.Fatal("empty password must be rejected")
 	}
 }

@@ -85,3 +85,12 @@ func TestParseFormat(t *testing.T) {
 		t.Fatal("unknown must fail")
 	}
 }
+
+func TestEmptyFormatMeansAuto(t *testing.T) {
+	if p := Decode([]byte(`{"a":1}`), "", 0); p.Format != JSON {
+		t.Fatalf("empty format must auto-detect: %+v", p)
+	}
+	if p := (Decoder{}).Decode([]byte("hi"), "", 0); p.Format != String {
+		t.Fatalf("decoder with empty format must auto-detect: %+v", p)
+	}
+}

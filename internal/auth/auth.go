@@ -118,6 +118,9 @@ func hashToken(t string) string {
 
 // HashPassword returns a bcrypt hash for config files.
 func HashPassword(pw string) (string, error) {
+	if pw == "" {
+		return "", errors.New("password must not be empty")
+	}
 	b, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	return string(b), err
 }

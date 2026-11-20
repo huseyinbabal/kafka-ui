@@ -197,3 +197,65 @@ func TestMessageIndexes(t *testing.T) {
 		}
 	}
 }
+
+// refRegistry serves a main schema that references another subject, for Avro and Protobuf.
+func refRegistry(t *testing.T) *Registry {
+	t.Helper()
+	byID := map[int]sr.Schema{
+		10: {Schema: `{"type":"record","name":"Order","namespace":"shop","fields":[{"name":"money","type":"shop.Money"}]}`,
+			References: []sr.SchemaReference{{Name: "shop.Money", Subject: "money", Version: 1}}},
+		11: {Type: sr.TypeProtobuf, Schema: `syntax = "proto3"; package shop; import "money.proto"; message Order { Money total = 1; }`,
+			References: []sr.SchemaReference{{Name: "money.proto", Subject: "money-proto", Version: 1}}},
+	}
+	versions := map[string]sr.SubjectSchema{
+		"money":       {Subject: "money", Version: 1, ID: 20, Schema: sr.Schema{Schema: `{"type":"record","name":"Money","namespace":"shop","fields":[{"name":"cents","type":"long"}]}`}},
+		"money-proto": {Subject: "money-proto", Version: 1, ID: 21, Schema: sr.Schema{Type: sr.TypeProtobuf, Schema: `syntax = "proto3"; package shop; message Money { int64 cents = 1; }`}},
+		"orders":      {Subject: "orders", Version: 1, ID: 10, Schema: byID[10]},
+		"orders-pb":   {Subject: "orders-pb", Version: 1, ID: 11, Schema: byID[11]},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.schemaregistry.v1+json")
+		p := r.URL.Path
+		switch {
+		case strings.HasPrefix(p, "/schemas/ids/"):
+			var id int
+			_ = json.Unmarshal([]byte(strings.TrimPrefix(p, "/schemas/ids/")), &id)
+			_ = json.NewEncoder(w).Encode(byID[id])
+		case strings.HasPrefix(p, "/subjects/"):
+			parts := strings.Split(strings.TrimPrefix(p, "/subjects/"), "/")
+			_ = json.NewEncoder(w).Encode(versions[parts[0]])
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := sr.NewClient(sr.URLs(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewRegistry(cl)
+}
+
+func TestSchemaReferences(t *testing.T) {
+	reg := refRegistry(t)
+	ctx := context.Background()
+	b, err := reg.Encode(ctx, SchemaRef{Subject: "orders"}, `{"money":{"cents":250}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := reg.Decode(ctx, b)
+	if err != nil || p.Text != `{"money":{"cents":250}}` {
+		t.Fatalf("avro with reference: %+v %v", p, err)
+	}
+	b, err = reg.Encode(ctx, SchemaRef{Subject: "orders-pb"}, `{"total":{"cents":"250"}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = reg.Decode(ctx, b)
+	if err != nil || p.Text != `{"total":{"cents":"250"}}` {
+		t.Fatalf("protobuf with import: %+v %v", p, err)
+	}
+	if _, _, err := readMessageIndexes([]byte{0x80}); err == nil {
+		t.Fatal("truncated varint must fail")
+	}
+}
