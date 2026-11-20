@@ -86,7 +86,7 @@ internal/itest/        integration tests (-tags=integration)
 web/                   React app (Vite, TanStack Router/Query/Table, shadcn/ui); web/e2e Playwright specs
 ```
 
-The design, decisions and acceptance criteria live in [`SPEC.md`](SPEC.md).
+Behavior, architecture and contributing rules are described in [`SPEC.md`](SPEC.md).
 
 ## Limitations
 
