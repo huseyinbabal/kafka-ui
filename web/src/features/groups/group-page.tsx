@@ -6,6 +6,7 @@ import { PageHeader, StatCard } from '@/components/page'
 import { EmptyState, ErrorState, LoadingRows } from '@/components/states'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { GroupLagTrend } from '@/features/analytics/series-cards'
 import { useCanMutate } from '@/features/auth/api'
 import type { GroupMember, PartitionLag } from '@/lib/api'
 import { formatNumber, formatOffset } from '@/lib/format'
@@ -142,6 +143,7 @@ export function GroupPage() {
             <StatCard label="Total lag" value={formatNumber(data.totalLag)} tone={data.totalLag > 0 ? 'warn' : 'ok'} />
             <StatCard label="Coordinator" value={`Broker ${data.coordinator}`} />
           </div>
+          <GroupLagTrend clusterId={clusterId} group={group} />
           <Card>
             <CardHeader>
               <CardTitle>Members</CardTitle>

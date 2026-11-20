@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/huseyinbabal/kafka-ui/internal/analytics"
 	"github.com/huseyinbabal/kafka-ui/internal/apierr"
 	"github.com/huseyinbabal/kafka-ui/internal/auth"
 	"github.com/huseyinbabal/kafka-ui/internal/cluster"
@@ -26,6 +27,8 @@ type Server struct {
 	loginRate *auth.RateLimiter
 	log       *slog.Logger
 	static    fs.FS
+	store     *analytics.Store
+	collector *analytics.Collector
 }
 
 func NewServer(cfg *config.Config, a *auth.Service, reg *cluster.Registry, static fs.FS, log *slog.Logger) *Server {
@@ -62,6 +65,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/clusters/{cluster}/schemas/subjects/{subject}/versions", admin(s.registerSchema))
 	api.HandleFunc("PUT /api/v1/clusters/{cluster}/schemas/subjects/{subject}/compatibility", admin(s.setCompatibility))
 	api.HandleFunc("DELETE /api/v1/clusters/{cluster}/schemas/subjects/{subject}", admin(s.deleteSubject))
+	api.HandleFunc("GET /api/v1/clusters/{cluster}/analytics/overview", s.analyticsOverview)
+	api.HandleFunc("GET /api/v1/clusters/{cluster}/analytics/topics/{topic}", s.analyticsTopic)
+	api.HandleFunc("GET /api/v1/clusters/{cluster}/analytics/groups/{group}", s.analyticsGroup)
+	api.HandleFunc("GET /api/v1/clusters/{cluster}/analytics/skew", s.analyticsSkew)
+	api.HandleFunc("GET /api/v1/clusters/{cluster}/analytics/hygiene", s.analyticsHygiene)
 	api.HandleFunc("GET /api/v1/clusters/{cluster}/acls", s.listACLs)
 	api.HandleFunc("POST /api/v1/clusters/{cluster}/acls", admin(s.createACL))
 	api.HandleFunc("POST /api/v1/clusters/{cluster}/acls/delete", admin(s.deleteACL))

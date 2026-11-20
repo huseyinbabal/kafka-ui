@@ -1,6 +1,6 @@
 # Spec: Kafka UI
 
-> Status: **APPROVED, in progress** (M0–M4 done, 2026-11-20). Living document: update this first whenever scope or a decision changes.
+> Status: **APPROVED, in progress** (M0–M5 done, 2026-11-20). Living document: update this first whenever scope or a decision changes.
 
 ## 1. Objective
 
@@ -337,3 +337,9 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 - 2026-11-20: Producing with "Schema Registry" takes a subject (+ version, + protobuf message name; default first message). Avro input accepts bare or {"type": value} union values. JSON Schema payloads are only checked for valid JSON, not validated against the schema.
 - 2026-11-20: Interop verified both ways with Confluent's console tools (Avro and Protobuf, incl. 2^53+1 longs).
 - 2026-11-20: Schema endpoints are not gated on Kafka health (the registry is a separate service). Subject delete is soft by default; permanent delete is opt-in.
+- 2026-11-20: Analytics store: per-topic offset/size sums, per-group-topic committed sum + lag, and cluster URP/offline counts. Raw samples are kept 6h, then rolled into minute buckets (max per minute: counters keep their last value, lag/URP keep spikes) kept for `storage.retention` (7d). Compaction runs every 5 minutes.
+- 2026-11-20: Rates are derived at query time from counter deltas, timed by the actual samples in each bucket (a partly filled last bucket is not under-reported). Charts get about 240 points per range. Bytes/s is estimated from log size growth, sampled every 30s, and charted in ≥1-minute buckets.
+- 2026-11-20: Group catch-up = lag ÷ (consume − ingress) over the trailing 5 minutes; "not consuming" when the consume rate is 0, "falling behind" when consume ≤ ingress. Groups not sampled in the last two buckets (deleted) are dropped from the list.
+- 2026-11-20: Skew (hot partitions over 1.5× their fair share, leaders/replicas/ingress per broker) comes from the collector's in-memory last minute, not the DB. Idle topics report where their evidence starts (first sample or range start).
+- 2026-11-20: Charts use the dataviz reference palette (validated light/dark, first three slots) as `--series-1..3`; one y-axis per chart, so msg/s and bytes/s are separate charts.
+- 2026-11-20: Demo traffic: `deploy/kind/traffic.yaml` (`make kind-traffic`) runs a ~20 msg/s producer into `e2e-traffic` (6 partitions) and a bursty slow consumer group `e2e-slow-consumer`.

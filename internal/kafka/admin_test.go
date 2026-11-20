@@ -66,3 +66,36 @@ func TestListAllFilterIsValid(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTopicIssues(t *testing.T) {
+	kinds := func(is []HygieneIssue) []string {
+		var out []string
+		for _, i := range is {
+			out = append(out, i.Kind)
+		}
+		return out
+	}
+	cases := []struct {
+		rf, minISR, urp int
+		want            []string
+	}{
+		{3, 2, 0, nil},
+		{1, 1, 0, []string{"low-rf"}},
+		{3, 4, 0, []string{"minisr-too-high"}},
+		{3, 3, 0, []string{"minisr-too-high"}},
+		{3, 1, 0, []string{"minisr-weak"}},
+		{3, 2, 2, []string{"under-replicated"}},
+	}
+	for _, c := range cases {
+		got := kinds(topicIssues("t", c.rf, c.minISR, c.urp))
+		if len(got) != len(c.want) {
+			t.Errorf("%+v: got %v", c, got)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%+v: got %v", c, got)
+			}
+		}
+	}
+}

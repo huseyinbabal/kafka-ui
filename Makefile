@@ -2,7 +2,7 @@ KIND_CLUSTER ?= kafkatr
 KCTX         ?= kind-$(KIND_CLUSTER)
 IMAGE        ?= kafka-ui:dev
 
-.PHONY: kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
+.PHONY: kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
 
 setup:
 	go mod download
@@ -51,6 +51,10 @@ kind-deploy: image
 kind-sr:
 	kubectl --context $(KCTX) apply -f deploy/kind/schema-registry.yaml
 	kubectl --context $(KCTX) -n kafka-ui rollout status deploy/schema-registry --timeout=300s
+
+# Demo traffic (e2e-traffic topic, ~20 msg/s, slow consumer group) for analytics.
+kind-traffic:
+	kubectl --context $(KCTX) apply -f deploy/kind/traffic.yaml
 
 # Second dev cluster (SCRAM + simple authorizer) and the kafka-ui credentials for it.
 kind-secure:

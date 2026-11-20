@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/huseyinbabal/kafka-ui/internal/analytics"
 	"github.com/huseyinbabal/kafka-ui/internal/api"
 	"github.com/huseyinbabal/kafka-ui/internal/auth"
 	"github.com/huseyinbabal/kafka-ui/internal/cluster"
@@ -91,9 +92,13 @@ func run() error {
 		}
 	})
 
+	store := analytics.NewStore(db, cfg.Storage.Retention)
+	collector := analytics.NewCollector(reg, store, cfg.Collector.Interval, log)
+	go collector.Run(ctx)
+
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
-		Handler:           api.NewServer(cfg, authSvc, reg, web.Dist(), log).Handler(),
+		Handler:           api.NewServer(cfg, authSvc, reg, web.Dist(), log).WithAnalytics(store, collector).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}

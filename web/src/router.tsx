@@ -3,6 +3,7 @@ import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect
 import { ClusterLayout } from '@/components/app-layout'
 import { EmptyState, ErrorState } from '@/components/states'
 import { ACLsPage } from '@/features/acls/acls-page'
+import { AnalyticsPage } from '@/features/analytics/analytics-page'
 import { meKey } from '@/features/auth/api'
 import { LoginPage } from '@/features/auth/login-page'
 import { BrokersPage } from '@/features/clusters/brokers-page'
@@ -92,6 +93,7 @@ const groupRoute = createRoute({ getParentRoute: () => groupsRoute, path: '$grou
 const schemasRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'schemas' })
 const schemasIndexRoute = createRoute({ getParentRoute: () => schemasRoute, path: '/', component: SchemasPage })
 const subjectRoute = createRoute({ getParentRoute: () => schemasRoute, path: '$subject', component: SubjectPage })
+const analyticsRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'analytics', component: AnalyticsPage })
 const aclsRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'acls', component: ACLsPage })
 
 const routeTree = rootRoute.addChildren([
@@ -104,6 +106,7 @@ const routeTree = rootRoute.addChildren([
     groupsRoute.addChildren([groupsIndexRoute, groupRoute]),
     schemasRoute.addChildren([schemasIndexRoute, subjectRoute]),
     aclsRoute,
+    analyticsRoute,
   ]),
 ])
 

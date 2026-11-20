@@ -8,6 +8,7 @@ import { PageHeader, StatCard } from '@/components/page'
 import { EmptyState, ErrorState, LoadingRows } from '@/components/states'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TopicThroughput } from '@/features/analytics/series-cards'
 import { useCanMutate } from '@/features/auth/api'
 import { useCluster } from '@/features/clusters/api'
 import { StateBadge } from '@/features/groups/state-badge'
@@ -153,6 +154,7 @@ export function TopicPage() {
               <TabsTrigger value="consumers">
                 Consumers {consumers.data && <Badge variant="secondary">{consumers.data.length}</Badge>}
               </TabsTrigger>
+              <TabsTrigger value="throughput">Throughput</TabsTrigger>
               <TabsTrigger value="configs">Configs</TabsTrigger>
               <TabsTrigger value="messages">Messages</TabsTrigger>
               {hasSchemaRegistry && <TabsTrigger value="schema">Schema</TabsTrigger>}
@@ -177,6 +179,9 @@ export function TopicPage() {
                   }
                 />
               )}
+            </TabsContent>
+            <TabsContent value="throughput" className="mt-4">
+              <TopicThroughput clusterId={clusterId} topic={topic} />
             </TabsContent>
             <TabsContent value="configs" className="mt-4">
               <ConfigTable configs={data.configs ?? []} onEdit={canMutate ? setEditing : undefined} />
