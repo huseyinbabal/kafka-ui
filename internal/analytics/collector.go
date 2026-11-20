@@ -326,3 +326,19 @@ func partial(err error) bool {
 	var se *kadm.ShardErrors
 	return errors.As(err, &se) && !se.AllFailed
 }
+
+// PartitionRates returns the last minute's ingress per topic and partition (msg/s).
+func (c *Collector) PartitionRates(clusterID string) map[string]map[int32]float64 {
+	live := c.Live(clusterID)
+	if live == nil {
+		return nil
+	}
+	out := map[string]map[int32]float64{}
+	for _, p := range live.Partitions {
+		if out[p.Topic] == nil {
+			out[p.Topic] = map[int32]float64{}
+		}
+		out[p.Topic][p.Partition] = p.Rate
+	}
+	return out
+}

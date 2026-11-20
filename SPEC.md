@@ -1,6 +1,6 @@
 # Spec: Kafka UI
 
-> Status: **APPROVED, in progress** (M0–M5 done, 2026-11-20). Living document: update this first whenever scope or a decision changes.
+> Status: **APPROVED, in progress** (M0–M6 done, 2026-11-20; open items: integration/E2E tests, 500-node FPS check). Living document: update this first whenever scope or a decision changes.
 
 ## 1. Objective
 
@@ -343,3 +343,7 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 - 2026-11-20: Skew (hot partitions over 1.5× their fair share, leaders/replicas/ingress per broker) comes from the collector's in-memory last minute, not the DB. Idle topics report where their evidence starts (first sample or range start).
 - 2026-11-20: Charts use the dataviz reference palette (validated light/dark, first three slots) as `--series-1..3`; one y-axis per chart, so msg/s and bytes/s are separate charts.
 - 2026-11-20: Demo traffic: `deploy/kind/traffic.yaml` (`make kind-traffic`) runs a ~20 msg/s producer into `e2e-traffic` (6 partitions) and a bursty slow consumer group `e2e-slow-consumer`.
+- 2026-11-20: Live view: one snapshot builder per watched cluster (`internal/live.Hub`), only while someone watches; snapshots every `collector.liveInterval` (2s) over SSE, slow clients get the newest one. Nodes: brokers, topics, groups, members; links: topic→leader broker, group→member, member→topic (assignments), group→topic (committed offsets, so member-less groups stay near their topics). Topic/broker rates come from the analytics collector (last minute); group/member rates from commit deltas between snapshots.
+- 2026-11-20: The client merges snapshots into the existing graph (node and link objects keep identity and positions); the layout only gets new data when nodes/links are added or removed. New members start next to their group and are drawn 3× larger for 4s; joins/leaves go to a "Recent changes" list. Group color = lag status (good/warning/serious/critical, dataviz status palette) with legend and labels.
+- 2026-11-20: The live page and three.js load lazily (separate ~430 KB gz chunk). Kafka-provided labels are HTML-escaped in tooltips.
+- 2026-11-20: Success criterion 11 verified with the e2e demo consumer (scaling `e2e-traffic-consumer` 1→3 showed the new members within one tick after their JVMs joined) rather than `analytics`, which belongs to the existing workloads (ask first). Measured ~30 fps in the automation browser with ~35 nodes, which looks like a browser frame cap; the 500-node budget is not verified yet.

@@ -20,6 +20,7 @@ import (
 	"github.com/huseyinbabal/kafka-ui/internal/auth"
 	"github.com/huseyinbabal/kafka-ui/internal/cluster"
 	"github.com/huseyinbabal/kafka-ui/internal/config"
+	"github.com/huseyinbabal/kafka-ui/internal/live"
 	"github.com/huseyinbabal/kafka-ui/internal/storage"
 	"github.com/huseyinbabal/kafka-ui/web"
 )
@@ -97,8 +98,9 @@ func run() error {
 	go collector.Run(ctx)
 
 	srv := &http.Server{
-		Addr:              cfg.Server.Addr,
-		Handler:           api.NewServer(cfg, authSvc, reg, web.Dist(), log).WithAnalytics(store, collector).Handler(),
+		Addr: cfg.Server.Addr,
+		Handler: api.NewServer(cfg, authSvc, reg, web.Dist(), log).WithAnalytics(store, collector).
+			WithLive(live.NewHub(ctx, cfg.Collector.LiveInterval, collector.PartitionRates, log)).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}

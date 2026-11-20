@@ -1,5 +1,12 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router'
+import {
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  lazyRouteComponent,
+  Outlet,
+  redirect,
+} from '@tanstack/react-router'
 import { ClusterLayout } from '@/components/app-layout'
 import { EmptyState, ErrorState } from '@/components/states'
 import { ACLsPage } from '@/features/acls/acls-page'
@@ -94,6 +101,12 @@ const schemasRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'sc
 const schemasIndexRoute = createRoute({ getParentRoute: () => schemasRoute, path: '/', component: SchemasPage })
 const subjectRoute = createRoute({ getParentRoute: () => schemasRoute, path: '$subject', component: SubjectPage })
 const analyticsRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'analytics', component: AnalyticsPage })
+// three.js is large: load the live view only when it is opened.
+const liveRoute = createRoute({
+  getParentRoute: () => clusterRoute,
+  path: 'live',
+  component: lazyRouteComponent(() => import('@/features/live/live-page'), 'LivePage'),
+})
 const aclsRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'acls', component: ACLsPage })
 
 const routeTree = rootRoute.addChildren([
@@ -107,6 +120,7 @@ const routeTree = rootRoute.addChildren([
     schemasRoute.addChildren([schemasIndexRoute, subjectRoute]),
     aclsRoute,
     analyticsRoute,
+    liveRoute,
   ]),
 ])
 

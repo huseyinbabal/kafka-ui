@@ -144,6 +144,15 @@ func guessVersion(ctx context.Context, adm *kadm.Client) string {
 	return ""
 }
 
+// ActiveController returns the active controller: the KRaft quorum leader, or
+// the Metadata controller on clusters without DescribeQuorum (ZooKeeper mode).
+func ActiveController(ctx context.Context, cl *kgo.Client, fallback int32) int32 {
+	if id, ok := quorumLeader(ctx, cl); ok {
+		return id
+	}
+	return fallback
+}
+
 // quorumLeader returns the active KRaft controller via DescribeQuorum (KIP-595/836).
 func quorumLeader(ctx context.Context, cl *kgo.Client) (int32, bool) {
 	req := kmsg.NewPtrDescribeQuorumRequest()

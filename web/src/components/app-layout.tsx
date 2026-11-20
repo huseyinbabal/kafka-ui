@@ -75,7 +75,7 @@ const nav: { label: string; items: NavItem[] }[] = [
     label: 'Insights',
     items: [
       { to: '/clusters/$clusterId/analytics', label: 'Analytics', icon: ChartLineIcon },
-      { to: '/clusters/$clusterId/live', label: 'Live topology', icon: ActivityIcon, soon: true },
+      { to: '/clusters/$clusterId/live', label: 'Live topology', icon: ActivityIcon },
     ],
   },
 ]
