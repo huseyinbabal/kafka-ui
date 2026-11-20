@@ -1,0 +1,25 @@
+server:
+  addr: ":8080"
+  secureCookies: false   # served over plain http via port-forward in dev
+auth:
+  sessionIdleTimeout: 12h
+  users:
+    - username: admin
+      passwordHash: "$2a$10$9zF4kuqZHQtxLmfkh3/dmeNM9iEnuVsQ//h2or.eJcCcw6cKlVRzi"
+      role: admin
+    - username: viewer
+      passwordHash: "$2a$10$ts/2.yiJuBUBd/ZXLbfYLuxQaRsmj6Gxa1uCsB5xPLgtra.pgOZyG"
+      role: viewer
+storage:
+  path: /data/kafka-ui.db
+clusters:
+  - id: orders
+    name: Orders (kind)
+    bootstrap: ["localhost:9092"]
+  - id: orders-readonly
+    name: Orders (read-only)
+    bootstrap: ["localhost:9092"]
+    readOnly: true
+  - id: unreachable
+    name: Unreachable (demo)
+    bootstrap: ["does-not-exist.kafka.svc:9092"]

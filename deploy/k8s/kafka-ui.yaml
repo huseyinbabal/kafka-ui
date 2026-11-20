@@ -1,0 +1,108 @@
+# Local development deployment for the kind cluster `kafkatr`.
+# DEV ONLY: the users below are admin/admin and viewer/viewer.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-ui
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-ui-config
+  namespace: kafka-ui
+stringData:
+  config.yaml: |
+    server:
+      addr: ":8080"
+      secureCookies: false   # served over plain http via port-forward in dev
+    auth:
+      sessionIdleTimeout: 12h
+      users:
+        - username: admin
+          passwordHash: "$2a$10$9zF4kuqZHQtxLmfkh3/dmeNM9iEnuVsQ//h2or.eJcCcw6cKlVRzi"
+          role: admin
+        - username: viewer
+          passwordHash: "$2a$10$ts/2.yiJuBUBd/ZXLbfYLuxQaRsmj6Gxa1uCsB5xPLgtra.pgOZyG"
+          role: viewer
+    storage:
+      path: /data/kafka-ui.db
+    clusters:
+      - id: orders
+        name: Orders (kind)
+        bootstrap: ["orders-cluster-kafka-bootstrap.kafka.svc:9092"]
+      - id: orders-readonly
+        name: Orders (read-only)
+        bootstrap: ["orders-cluster-kafka-bootstrap.kafka.svc:9092"]
+        readOnly: true
+      - id: unreachable
+        name: Unreachable (demo)
+        bootstrap: ["does-not-exist.kafka.svc:9092"]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-ui-data
+  namespace: kafka-ui
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+  namespace: kafka-ui
+  labels: {app: kafka-ui}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # SQLite on an RWO volume
+  selector:
+    matchLabels: {app: kafka-ui}
+  template:
+    metadata:
+      labels: {app: kafka-ui}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+        - name: kafka-ui
+          image: kafka-ui:dev
+          imagePullPolicy: Never
+          args: ["-config", "/etc/kafka-ui/config.yaml", "-log-format", "json"]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/kafka-ui, readOnly: true}
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: config
+          secret: {secretName: kafka-ui-config}
+        - name: data
+          persistentVolumeClaim: {claimName: kafka-ui-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+  namespace: kafka-ui
+spec:
+  selector: {app: kafka-ui}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

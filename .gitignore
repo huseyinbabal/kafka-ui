@@ -1,0 +1,11 @@
+bin/
+*.db
+*.db-shm
+*.db-wal
+config.yaml
+web/node_modules/
+web/dist/*
+!web/dist/index.html
+web/test-results/
+web/playwright-report/
+.env
