@@ -9,6 +9,8 @@ import { BrokersPage } from '@/features/clusters/brokers-page'
 import { OverviewPage } from '@/features/clusters/overview-page'
 import { GroupPage } from '@/features/groups/group-page'
 import { GroupsPage } from '@/features/groups/groups-page'
+import { SchemasPage } from '@/features/schemas/schemas-page'
+import { SubjectPage } from '@/features/schemas/subject-page'
 import { TopicPage } from '@/features/topics/topic-page'
 import { TopicsPage } from '@/features/topics/topics-page'
 import { ApiError, type ClusterInfo, get, type List, type Principal } from '@/lib/api'
@@ -87,6 +89,9 @@ const groupsRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'gro
 const groupsIndexRoute = createRoute({ getParentRoute: () => groupsRoute, path: '/', component: GroupsPage })
 const groupRoute = createRoute({ getParentRoute: () => groupsRoute, path: '$group', component: GroupPage })
 
+const schemasRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'schemas' })
+const schemasIndexRoute = createRoute({ getParentRoute: () => schemasRoute, path: '/', component: SchemasPage })
+const subjectRoute = createRoute({ getParentRoute: () => schemasRoute, path: '$subject', component: SubjectPage })
 const aclsRoute = createRoute({ getParentRoute: () => clusterRoute, path: 'acls', component: ACLsPage })
 
 const routeTree = rootRoute.addChildren([
@@ -97,6 +102,7 @@ const routeTree = rootRoute.addChildren([
     brokersRoute,
     topicsRoute.addChildren([topicsIndexRoute, topicRoute]),
     groupsRoute.addChildren([groupsIndexRoute, groupRoute]),
+    schemasRoute.addChildren([schemasIndexRoute, subjectRoute]),
     aclsRoute,
   ]),
 ])

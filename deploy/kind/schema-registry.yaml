@@ -1,0 +1,43 @@
+# Dev-only Confluent Schema Registry backed by orders-cluster (stores schemas in `_schemas`).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schema-registry
+  namespace: kafka-ui
+  labels: {app: schema-registry}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: schema-registry}
+  template:
+    metadata:
+      labels: {app: schema-registry}
+    spec:
+      enableServiceLinks: false # otherwise SCHEMA_REGISTRY_PORT from the Service breaks startup
+      containers:
+        - name: schema-registry
+          image: confluentinc/cp-schema-registry:8.0.0
+          ports:
+            - {name: http, containerPort: 8081}
+          env:
+            - {name: SCHEMA_REGISTRY_HOST_NAME, value: schema-registry}
+            - {name: SCHEMA_REGISTRY_LISTENERS, value: "http://0.0.0.0:8081"}
+            - {name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS, value: "PLAINTEXT://orders-cluster-kafka-bootstrap.kafka.svc:9092"}
+            - {name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR, value: "3"}
+            - {name: SCHEMA_REGISTRY_HEAP_OPTS, value: "-Xms256m -Xmx512m"}
+          readinessProbe:
+            httpGet: {path: /subjects, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {memory: 512Mi, cpu: 100m}
+            limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schema-registry
+  namespace: kafka-ui
+spec:
+  selector: {app: schema-registry}
+  ports:
+    - {name: http, port: 8081, targetPort: http}

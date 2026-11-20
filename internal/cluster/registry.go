@@ -18,6 +18,8 @@ import (
 
 	"github.com/huseyinbabal/kafka-ui/internal/apierr"
 	"github.com/huseyinbabal/kafka-ui/internal/config"
+	"github.com/huseyinbabal/kafka-ui/internal/schemaregistry"
+	"github.com/huseyinbabal/kafka-ui/internal/serde"
 )
 
 type Status string
@@ -33,6 +35,9 @@ type Cluster struct {
 	Config config.ClusterConfig
 	Client *kgo.Client
 	Admin  *kadm.Client
+	// Schemas and Serde are nil when no schema registry is configured.
+	Schemas *schemaregistry.Client
+	Serde   *serde.Registry
 
 	opts     []kgo.Opt
 	setupErr error // non-nil when the client could not be created; Client/Admin are nil then
@@ -42,6 +47,9 @@ type Cluster struct {
 	lastErr   string
 	lastCheck time.Time
 }
+
+// Decoder returns a payload decoder that uses the cluster's schema registry, if any.
+func (c *Cluster) Decoder() serde.Decoder { return serde.Decoder{Registry: c.Serde} }
 
 // NewClient creates a short-lived client with the cluster's connection settings,
 // e.g. a direct-partition consumer for a message scan. The caller must Close it.
@@ -106,6 +114,15 @@ func NewRegistry(cfgs []config.ClusterConfig, log *slog.Logger) (*Registry, erro
 			continue
 		}
 		c.Admin, c.opts = kadm.NewClient(c.Client), opts
+		if cfg.SchemaRegistry != nil {
+			sc, err := schemaregistry.New(cfg.SchemaRegistry)
+			if err != nil {
+				// Kafka still works; schema features report the problem.
+				log.Error("schema registry setup failed", "cluster", cfg.ID, "err", err)
+				continue
+			}
+			c.Schemas, c.Serde = sc, serde.NewRegistry(sc.SR)
+		}
 	}
 	return r, nil
 }

@@ -83,7 +83,11 @@ const columns: ColumnDef<Message>[] = [
     cell: ({ row }) => (
       <span className="flex items-center gap-2">
         {row.original.value && row.original.value.format !== 'string' && (
-          <Badge variant="secondary" className="shrink-0">
+          <Badge
+            variant={row.original.value.error ? 'destructive' : 'secondary'}
+            className="shrink-0"
+            title={row.original.value.error}
+          >
             {row.original.value.format}
           </Badge>
         )}
@@ -166,11 +170,16 @@ export function MessagesTab({
   clusterId,
   topic,
   partitions,
+  hasSchemaRegistry,
 }: {
   clusterId: string
   topic: string
   partitions: number
+  hasSchemaRegistry: boolean
 }) {
+  const formatChoices = hasSchemaRegistry
+    ? [...formats, { value: 'schema' as Format, label: 'Schema Registry' }]
+    : formats
   const [params, setParams] = useState<BrowseParams>({
     mode: 'newest',
     limit: 100,
@@ -283,7 +292,7 @@ export function MessagesTab({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {formats.map((f) => (
+                {formatChoices.map((f) => (
                   <SelectItem key={f.value} value={f.value}>
                     {f.label}
                   </SelectItem>
@@ -300,7 +309,7 @@ export function MessagesTab({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {formats.map((f) => (
+                {formatChoices.map((f) => (
                   <SelectItem key={f.value} value={f.value}>
                     {f.label}
                   </SelectItem>

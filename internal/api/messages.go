@@ -80,6 +80,7 @@ func (s *Server) streamMessages(w http.ResponseWriter, r *http.Request) {
 	defer close(done)
 	go sse.heartbeat(15*time.Second, done)
 
+	req.Decoder = c.Decoder()
 	sink := sseSink{sse}
 	res, err := kafka.Browse(r.Context(), c.NewClient, c.Admin, req, sink)
 	if err != nil {
@@ -123,7 +124,7 @@ func (s *Server) getMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer cancel()
-	m, err := kafka.GetMessage(ctx, c.NewClient, c.Admin, r.PathValue("topic"), int32(part), off, kf, vf)
+	m, err := kafka.GetMessage(ctx, c.NewClient, c.Admin, c.Decoder(), r.PathValue("topic"), int32(part), off, kf, vf)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -144,7 +145,7 @@ func (s *Server) produceMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ctx, cancel, ok := s.withCluster(w, r); ok {
 		defer cancel()
-		res, err := kafka.Produce(ctx, c.Client, c.Admin, r.PathValue("topic"), req)
+		res, err := kafka.Produce(ctx, c.Client, c.Admin, c.Serde, r.PathValue("topic"), req)
 		if err != nil {
 			writeError(w, r, err)
 			return

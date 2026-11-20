@@ -3,11 +3,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, enc, get } from '@/lib/api'
 import { openSSE } from '@/lib/sse'
 
-export type Format = 'auto' | 'string' | 'json' | 'base64' | 'hex'
+export type Format = 'auto' | 'string' | 'json' | 'base64' | 'hex' | 'schema'
+/** Formats a decoded payload can report; schema-backed ones render as JSON. */
+export type PayloadFormat = Exclude<Format, 'auto' | 'schema'> | 'avro' | 'protobuf' | 'jsonschema'
+export const jsonFormats: PayloadFormat[] = ['json', 'avro', 'protobuf', 'jsonschema']
 export type SeekMode = 'newest' | 'oldest' | 'offset' | 'timestamp' | 'live'
 export type FilterField = 'any' | 'key' | 'value' | 'header'
 
-export type Payload = { format: Format; text: string; size: number; truncated?: boolean; schemaId?: number }
+export type Payload = {
+  format: PayloadFormat
+  text: string
+  size: number
+  truncated?: boolean
+  schemaId?: number
+  /** Why schema-registry decoding failed; text then holds a raw rendering. */
+  error?: string
+}
 export type Message = {
   partition: number
   offset: number
@@ -144,12 +155,15 @@ export function fetchMessage(clusterId: string, topic: string, m: Message, keyFo
   return get<Message>(`${base(clusterId, topic)}/${m.partition}/${m.offset}?${qs}`)
 }
 
+export type SchemaRef = { subject: string; version?: number; message?: string }
 export type ProduceInput = {
   partition: number | null
   key: string | null
   value: string | null
   keyFormat: Format
   valueFormat: Format
+  keySchema?: SchemaRef
+  valueSchema?: SchemaRef
   headers: { key: string; value: string }[]
 }
 export type ProduceResult = { partition: number; offset: number; timestamp: number }

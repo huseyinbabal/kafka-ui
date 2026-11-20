@@ -4,6 +4,7 @@ package serde
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -28,7 +29,7 @@ func ParseFormat(s string) (Format, error) {
 	switch f := Format(s); f {
 	case "":
 		return Auto, nil
-	case Auto, String, JSON, Base64, Hex:
+	case Auto, String, JSON, Base64, Hex, Schema:
 		return f, nil
 	default:
 		return "", fmt.Errorf("unknown format %q", s)
@@ -45,6 +46,42 @@ type Payload struct {
 	Truncated bool `json:"truncated,omitempty"`
 	// SchemaID is set when the bytes look like Confluent wire format (magic 0 + id).
 	SchemaID *int32 `json:"schemaId,omitempty"`
+	// Error explains why schema-based decoding failed; Text then holds a raw rendering.
+	Error string `json:"error,omitempty"`
+}
+
+// Decoder renders record bytes, using the schema registry when one is configured.
+type Decoder struct {
+	Registry *Registry // nil when the cluster has no schema registry
+	Ctx      context.Context
+}
+
+// Decode is like the package-level Decode, but Auto and Schema try the
+// registry for payloads in Confluent wire format.
+func (d Decoder) Decode(b []byte, f Format, maxText int) *Payload {
+	if b == nil {
+		return nil
+	}
+	_, wire := wireSchemaID(b)
+	if f != Schema && (f != Auto || !wire || d.Registry == nil) {
+		return Decode(b, f, maxText)
+	}
+	reason := "no schema registry is configured for this cluster"
+	if d.Registry != nil {
+		ctx := d.Ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		p, err := d.Registry.Decode(ctx, b)
+		if err == nil {
+			truncate(p, maxText)
+			return p
+		}
+		reason = err.Error()
+	}
+	p := Decode(b, Auto, maxText)
+	p.Error = reason
+	return p
 }
 
 // Decode renders b with format f. A nil b yields nil (Kafka null).
@@ -59,12 +96,12 @@ func Decode(b []byte, f Format, maxText int) *Payload {
 	p := &Payload{Format: f, Size: len(b)}
 	switch f {
 	case String:
-		p.Text = strings(b)
+		p.Text = toText(b)
 	case JSON:
 		if !json.Valid(b) {
 			// Manual override on non-JSON: fall back so the user still sees something.
 			p.Format = String
-			p.Text = strings(b)
+			p.Text = toText(b)
 			break
 		}
 		p.Text = string(b)
@@ -77,6 +114,12 @@ func Decode(b []byte, f Format, maxText int) *Payload {
 	if id, ok := wireSchemaID(b); ok {
 		p.SchemaID = &id
 	}
+	truncate(p, maxText)
+	return p
+}
+
+// truncate cuts p.Text to maxText bytes (0 = no limit) without splitting a rune.
+func truncate(p *Payload, maxText int) {
 	if maxText > 0 && len(p.Text) > maxText {
 		cut := maxText
 		for cut > 0 && !utf8.RuneStart(p.Text[cut]) {
@@ -84,7 +127,6 @@ func Decode(b []byte, f Format, maxText int) *Payload {
 		}
 		p.Text, p.Truncated = p.Text[:cut], true
 	}
-	return p
 }
 
 func detect(b []byte) Format {
@@ -115,8 +157,8 @@ func printable(b []byte) bool {
 	return true
 }
 
-// strings converts b to a string, replacing invalid UTF-8 so JSON encoding is lossless to read.
-func strings(b []byte) string {
+// toText converts b to a string, replacing invalid UTF-8 so JSON encoding is lossless to read.
+func toText(b []byte) string {
 	if utf8.Valid(b) {
 		return string(b)
 	}

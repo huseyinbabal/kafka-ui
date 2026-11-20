@@ -9,9 +9,11 @@ import { EmptyState, ErrorState, LoadingRows } from '@/components/states'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCanMutate } from '@/features/auth/api'
+import { useCluster } from '@/features/clusters/api'
 import { StateBadge } from '@/features/groups/state-badge'
 import { MessagesTab } from '@/features/messages/messages-tab'
 import { ProduceDialog } from '@/features/messages/produce-dialog'
+import { TopicSchemas } from '@/features/schemas/topic-schemas'
 import type { ConfigEntry, GroupSummary, Partition } from '@/lib/api'
 import { formatBytes, formatNumber, formatOffset } from '@/lib/format'
 import { useTopic, useTopicConsumers } from './api'
@@ -96,6 +98,7 @@ export function TopicPage() {
   const { data, isPending, error } = useTopic(clusterId, topic)
   const consumers = useTopicConsumers(clusterId, topic)
   const canMutate = useCanMutate(clusterId) && !!data && !data.internal
+  const hasSchemaRegistry = useCluster(clusterId).data?.hasSchemaRegistry ?? false
   const [editing, setEditing] = useState<ConfigEntry | null>(null)
 
   return (
@@ -115,7 +118,14 @@ export function TopicPage() {
         actions={
           <>
             {data?.internal && <Badge variant="outline">internal</Badge>}
-            {canMutate && <ProduceDialog clusterId={clusterId} topic={topic} partitions={data.partitions} />}
+            {canMutate && (
+              <ProduceDialog
+                clusterId={clusterId}
+                topic={topic}
+                partitions={data.partitions}
+                hasSchemaRegistry={hasSchemaRegistry}
+              />
+            )}
             {canMutate && <TopicActions clusterId={clusterId} topic={data} />}
           </>
         }
@@ -145,6 +155,7 @@ export function TopicPage() {
               </TabsTrigger>
               <TabsTrigger value="configs">Configs</TabsTrigger>
               <TabsTrigger value="messages">Messages</TabsTrigger>
+              {hasSchemaRegistry && <TabsTrigger value="schema">Schema</TabsTrigger>}
             </TabsList>
             <TabsContent value="partitions" className="mt-4">
               <DataTable columns={partitionColumns} data={data.partitionDetails} getRowId={(p) => String(p.id)} />
@@ -171,8 +182,18 @@ export function TopicPage() {
               <ConfigTable configs={data.configs ?? []} onEdit={canMutate ? setEditing : undefined} />
               <ConfigEditDialog clusterId={clusterId} topic={topic} entry={editing} onClose={() => setEditing(null)} />
             </TabsContent>
+            {hasSchemaRegistry && (
+              <TabsContent value="schema" className="mt-4">
+                <TopicSchemas clusterId={clusterId} topic={topic} />
+              </TabsContent>
+            )}
             <TabsContent value="messages" className="mt-4">
-              <MessagesTab clusterId={clusterId} topic={topic} partitions={data.partitions} />
+              <MessagesTab
+                clusterId={clusterId}
+                topic={topic}
+                partitions={data.partitions}
+                hasSchemaRegistry={hasSchemaRegistry}
+              />
             </TabsContent>
           </Tabs>
         </>

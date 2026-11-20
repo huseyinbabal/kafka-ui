@@ -1,6 +1,6 @@
 # Spec: Kafka UI
 
-> Status: **APPROVED, in progress** (M0–M3 done, 2026-11-20). Living document: update this first whenever scope or a decision changes.
+> Status: **APPROVED, in progress** (M0–M4 done, 2026-11-20). Living document: update this first whenever scope or a decision changes.
 
 ## 1. Objective
 
@@ -308,7 +308,7 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 
 ## 11. Open Questions
 
-1. **Schema Registry in kind:** nothing is deployed yet. Proposal: deploy Apicurio Registry (ccompat API) or Confluent `cp-schema-registry` into namespace `kafka-ui` (or `kafka`). Which one? (Ask-first: this changes the cluster.)
+1. ~~Schema Registry in kind~~ (resolved: Confluent cp-schema-registry 8.0.0). Was: nothing is deployed yet. Proposal: deploy Apicurio Registry (ccompat API) or Confluent `cp-schema-registry` into namespace `kafka-ui` (or `kafka`). Which one? (Ask-first: this changes the cluster.)
 2. ~~ACLs in kind~~ (resolved: second cluster `secure-cluster`). Was: `orders-cluster` has no authorizer and only a plain internal listener. Do we enable `authorization: simple` on it (it needs care, since the existing apps connect anonymously), or test ACLs only against the integration container plus a second Strimzi cluster?
 3. **UI users:** are the two built-in roles (admin/viewer) enough for v1, or do you need per-cluster roles (e.g. admin on dev, viewer on prod)?
 4. ~~Second real cluster~~ (resolved: yes). Was: should we create a small second Strimzi `Kafka` in kind for multi-cluster testing?
@@ -332,3 +332,8 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 - 2026-11-20: The ACL page shows "No authorizer" on `SECURITY_DISABLED`. ACL deletes match one exact entry (literal/prefixed only; ANY/MATCH are not exposed).
 - 2026-11-20: Second dev cluster `secure-cluster` (namespace `kafka`, 1 node, SCRAM-SHA-512, simple authorizer, `kafka-ui` is a super user) from `deploy/k8s/secure-cluster.yaml`; `make kind-secure` creates it and copies the kafka-ui password into the `kafka-ui` namespace. ACL CRUD verified against it.
 - 2026-11-20: A cluster whose client cannot be created (e.g. missing credential env var) is listed as offline with the reason instead of stopping the app.
+- 2026-11-20: Dev Schema Registry is Confluent `cp-schema-registry:8.0.0` in namespace `kafka-ui` (`deploy/kind/schema-registry.yaml`, `make kind-sr`), storing schemas in `_schemas` on orders-cluster. Configured for `orders` and `orders-readonly`; `secure` has none.
+- 2026-11-20: Auto decoding tries the registry only for payloads in Confluent wire format (magic 0 + positive schema id). On failure the raw bytes are shown with the reason; failed schema lookups are cached for 30s so big scans don't hammer the registry. Avro JSON keeps schema field order; bytes/fixed render as base64; Avro unions are shown unwrapped.
+- 2026-11-20: Producing with "Schema Registry" takes a subject (+ version, + protobuf message name; default first message). Avro input accepts bare or {"type": value} union values. JSON Schema payloads are only checked for valid JSON, not validated against the schema.
+- 2026-11-20: Interop verified both ways with Confluent's console tools (Avro and Protobuf, incl. 2^53+1 longs).
+- 2026-11-20: Schema endpoints are not gated on Kafka health (the registry is a separate service). Subject delete is soft by default; permanent delete is opt-in.

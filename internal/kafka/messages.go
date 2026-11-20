@@ -111,6 +111,8 @@ type BrowseRequest struct {
 	Filter      *Filter
 	KeyFormat   serde.Format
 	ValueFormat serde.Format
+	// Decoder renders payloads; set Decoder.Registry to decode schema-registry formats.
+	Decoder serde.Decoder
 }
 
 type Header struct {
@@ -173,6 +175,7 @@ func Browse(ctx context.Context, newClient NewClientFunc, adm *kadm.Client, req 
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	req.Decoder.Ctx = ctx
 
 	bounds, err := partitionBounds(ctx, adm, req.Topic, req.Partitions)
 	if err != nil {
@@ -242,7 +245,7 @@ func (s *scan) visit(r *kgo.Record) bool {
 
 func (s *scan) emit(r *kgo.Record) error {
 	s.matched++
-	if err := s.sink.Message(ToMessage(r, s.req.KeyFormat, s.req.ValueFormat, StreamMaxText)); err != nil {
+	if err := s.sink.Message(ToMessage(s.req.Decoder, r, s.req.KeyFormat, s.req.ValueFormat, StreamMaxText)); err != nil {
 		return err
 	}
 	if s.matched >= s.req.Limit {
@@ -483,11 +486,11 @@ func readSpans(ctx context.Context, newClient NewClientFunc, topic string, spans
 }
 
 // ToMessage converts a record for the API. maxText 0 means no truncation.
-func ToMessage(r *kgo.Record, keyFmt, valFmt serde.Format, maxText int) Message {
+func ToMessage(dec serde.Decoder, r *kgo.Record, keyFmt, valFmt serde.Format, maxText int) Message {
 	m := Message{
 		Partition: r.Partition, Offset: r.Offset, Timestamp: r.Timestamp.UnixMilli(),
-		Key:     serde.Decode(r.Key, keyFmt, maxText),
-		Value:   serde.Decode(r.Value, valFmt, maxText),
+		Key:     dec.Decode(r.Key, keyFmt, maxText),
+		Value:   dec.Decode(r.Value, valFmt, maxText),
 		Headers: make([]Header, 0, len(r.Headers)),
 		Size:    len(r.Key) + len(r.Value),
 	}
@@ -499,7 +502,8 @@ func ToMessage(r *kgo.Record, keyFmt, valFmt serde.Format, maxText int) Message 
 }
 
 // GetMessage reads one record with full (untruncated) content.
-func GetMessage(ctx context.Context, newClient NewClientFunc, adm *kadm.Client, topic string, partition int32, offset int64, keyFmt, valFmt serde.Format) (*Message, error) {
+func GetMessage(ctx context.Context, newClient NewClientFunc, adm *kadm.Client, dec serde.Decoder, topic string, partition int32, offset int64, keyFmt, valFmt serde.Format) (*Message, error) {
+	dec.Ctx = ctx
 	bounds, err := partitionBounds(ctx, adm, topic, []int32{partition})
 	if err != nil {
 		return nil, err
@@ -512,7 +516,7 @@ func GetMessage(ctx context.Context, newClient NewClientFunc, adm *kadm.Client, 
 	var found *Message
 	err = readSpans(ctx, newClient, topic, map[int32]span{partition: {offset, offset + 1}}, func(r *kgo.Record) error {
 		if r.Offset == offset {
-			m := ToMessage(r, keyFmt, valFmt, 0)
+			m := ToMessage(dec, r, keyFmt, valFmt, 0)
 			found = &m
 		}
 		return errStop
@@ -540,6 +544,9 @@ type ProduceRequest struct {
 	KeyFormat   string        `json:"keyFormat"`
 	ValueFormat string        `json:"valueFormat"`
 	Headers     []HeaderInput `json:"headers"`
+	// KeySchema/ValueSchema are required when the matching format is "schema".
+	KeySchema   *serde.SchemaRef `json:"keySchema"`
+	ValueSchema *serde.SchemaRef `json:"valueSchema"`
 }
 
 type ProduceResult struct {
@@ -550,13 +557,14 @@ type ProduceResult struct {
 
 // Produce writes one record. cl must use kgo.ManualPartitioner; when no
 // partition is given it is chosen like the Java client (murmur2 of the key).
-func Produce(ctx context.Context, cl *kgo.Client, adm *kadm.Client, topic string, req ProduceRequest) (*ProduceResult, error) {
+// reg may be nil when the cluster has no schema registry.
+func Produce(ctx context.Context, cl *kgo.Client, adm *kadm.Client, reg *serde.Registry, topic string, req ProduceRequest) (*ProduceResult, error) {
 	rec := &kgo.Record{Topic: topic}
 	var err error
-	if rec.Key, err = encodeOptional(req.Key, req.KeyFormat, "key"); err != nil {
+	if rec.Key, err = encodeOptional(ctx, reg, req.Key, req.KeyFormat, req.KeySchema, "key"); err != nil {
 		return nil, err
 	}
-	if rec.Value, err = encodeOptional(req.Value, req.ValueFormat, "value"); err != nil {
+	if rec.Value, err = encodeOptional(ctx, reg, req.Value, req.ValueFormat, req.ValueSchema, "value"); err != nil {
 		return nil, err
 	}
 	for _, h := range req.Headers {
@@ -593,7 +601,7 @@ func Produce(ctx context.Context, cl *kgo.Client, adm *kadm.Client, topic string
 	return &ProduceResult{Partition: r.Partition, Offset: r.Offset, Timestamp: r.Timestamp.UnixMilli()}, nil
 }
 
-func encodeOptional(text *string, format, what string) ([]byte, error) {
+func encodeOptional(ctx context.Context, reg *serde.Registry, text *string, format string, ref *serde.SchemaRef, what string) ([]byte, error) {
 	if text == nil {
 		return nil, nil
 	}
@@ -601,7 +609,19 @@ func encodeOptional(text *string, format, what string) ([]byte, error) {
 	if err != nil {
 		return nil, apierr.BadRequest(what+": "+err.Error(), err)
 	}
-	b, err := serde.Encode(*text, f)
+	var b []byte
+	if f == serde.Schema {
+		switch {
+		case reg == nil:
+			err = errors.New("no schema registry is configured for this cluster")
+		case ref == nil:
+			err = errors.New("a schema subject is required")
+		default:
+			b, err = reg.Encode(ctx, *ref, *text)
+		}
+	} else {
+		b, err = serde.Encode(*text, f)
+	}
 	if err != nil {
 		return nil, &apierr.Error{Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: what + ": " + err.Error(), Err: err}
 	}

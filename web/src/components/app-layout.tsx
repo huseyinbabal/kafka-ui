@@ -51,6 +51,7 @@ type NavItem = {
   icon: ComponentType<{ className?: string }>
   exact?: boolean
   soon?: boolean
+  needsSchemaRegistry?: boolean
 }
 
 const nav: { label: string; items: NavItem[] }[] = [
@@ -66,7 +67,7 @@ const nav: { label: string; items: NavItem[] }[] = [
   {
     label: 'Governance',
     items: [
-      { to: '/clusters/$clusterId/schemas', label: 'Schema Registry', icon: FileJson2Icon, soon: true },
+      { to: '/clusters/$clusterId/schemas', label: 'Schema Registry', icon: FileJson2Icon, needsSchemaRegistry: true },
       { to: '/clusters/$clusterId/acls', label: 'ACLs', icon: ShieldIcon },
     ],
   },
@@ -156,6 +157,8 @@ export function ClusterLayout() {
   const { clusterId } = useParams({ strict: false }) as { clusterId: string }
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const base = `/clusters/${clusterId}`
+  const { data: clusters = [] } = useClusters()
+  const hasSchemaRegistry = clusters.find((c) => c.id === clusterId)?.hasSchemaRegistry ?? false
 
   return (
     <SidebarProvider>
@@ -175,15 +178,21 @@ export function ClusterLayout() {
                 {group.items.map((item) => {
                   const href = item.to.replace('/clusters/$clusterId', base)
                   const active = item.exact ? pathname === href : pathname.startsWith(href)
+                  const off = item.soon ? 'soon' : item.needsSchemaRegistry && !hasSchemaRegistry ? 'none' : null
                   return (
                     <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton asChild isActive={active} tooltip={item.label} disabled={item.soon}>
-                        {item.soon ? (
+                      <SidebarMenuButton
+                        asChild
+                        isActive={active}
+                        tooltip={off === 'none' ? `${item.label}: not configured for this cluster` : item.label}
+                        disabled={!!off}
+                      >
+                        {off ? (
                           <span className="opacity-50">
                             <item.icon />
                             <span>{item.label}</span>
                             <Badge variant="outline" className="ml-auto text-[10px]">
-                              soon
+                              {off}
                             </Badge>
                           </span>
                         ) : (

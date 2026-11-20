@@ -2,7 +2,7 @@ KIND_CLUSTER ?= kafkatr
 KCTX         ?= kind-$(KIND_CLUSTER)
 IMAGE        ?= kafka-ui:dev
 
-.PHONY: kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
+.PHONY: kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
 
 setup:
 	go mod download
@@ -46,6 +46,11 @@ kind-deploy: image
 	kubectl --context $(KCTX) apply -f deploy/k8s/kafka-ui.yaml
 	kubectl --context $(KCTX) -n kafka-ui rollout restart deploy/kafka-ui
 	kubectl --context $(KCTX) -n kafka-ui rollout status deploy/kafka-ui --timeout=120s
+
+# Dev Schema Registry (Confluent) backed by orders-cluster.
+kind-sr:
+	kubectl --context $(KCTX) apply -f deploy/kind/schema-registry.yaml
+	kubectl --context $(KCTX) -n kafka-ui rollout status deploy/schema-registry --timeout=300s
 
 # Second dev cluster (SCRAM + simple authorizer) and the kafka-ui credentials for it.
 kind-secure:

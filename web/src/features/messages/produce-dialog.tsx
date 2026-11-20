@@ -1,5 +1,5 @@
 import { PlusIcon, SendIcon, Trash2Icon } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -16,8 +16,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { useSubjects } from '@/features/schemas/api'
 import { formatNumber } from '@/lib/format'
-import { type Format, useProduce } from './api'
+import { type Format, type SchemaRef, useProduce } from './api'
 import { partitionIds } from './messages-tab'
 
 const formats: { value: Format; label: string }[] = [
@@ -27,14 +28,25 @@ const formats: { value: Format; label: string }[] = [
   { value: 'hex', label: 'Hex' },
 ]
 
-function FormatSelect({ id, value, onChange }: { id: string; value: Format; onChange: (f: Format) => void }) {
+function FormatSelect({
+  id,
+  value,
+  onChange,
+  withSchema,
+}: {
+  id: string
+  value: Format
+  onChange: (f: Format) => void
+  withSchema: boolean
+}) {
+  const choices = withSchema ? [...formats, { value: 'schema' as Format, label: 'Schema Registry' }] : formats
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Format)}>
-      <SelectTrigger id={id} className="w-28">
+      <SelectTrigger id={id} className="w-40">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {formats.map((f) => (
+        {choices.map((f) => (
           <SelectItem key={f.value} value={f.value}>
             {f.label}
           </SelectItem>
@@ -46,15 +58,72 @@ function FormatSelect({ id, value, onChange }: { id: string; value: Format; onCh
 
 type HeaderRow = { id: number; key: string; value: string }
 
+/** Picks the subject (and protobuf message) used to serialize a key or value. */
+function SchemaPicker({
+  id,
+  clusterId,
+  value,
+  onChange,
+  preferred,
+}: {
+  id: string
+  clusterId: string
+  value: SchemaRef
+  onChange: (r: SchemaRef) => void
+  preferred: string
+}) {
+  const subjects = useSubjects(clusterId)
+  const items = subjects.data ?? []
+  const selected = items.find((s) => s.subject === value.subject)
+  // Default to the TopicNameStrategy subject once the list loads.
+  useEffect(() => {
+    if (!value.subject && items.some((s) => s.subject === preferred)) onChange({ subject: preferred })
+  }, [items, preferred, value.subject, onChange])
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={value.subject} onValueChange={(subject) => onChange({ subject })}>
+        <SelectTrigger id={id} aria-label="Schema subject" className="min-w-56 flex-1">
+          <SelectValue placeholder={subjects.isPending ? 'Loading subjects…' : 'Choose a subject'} />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((s) => (
+            <SelectItem key={s.subject} value={s.subject}>
+              {s.subject}{' '}
+              <span className="text-muted-foreground">
+                · {s.schemaType} v{s.latestVersion}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {selected?.schemaType === 'PROTOBUF' && (
+        <Input
+          aria-label="Protobuf message"
+          placeholder="message (default: first)"
+          className="w-56 font-mono"
+          value={value.message ?? ''}
+          onChange={(e) => onChange({ ...value, message: e.target.value || undefined })}
+        />
+      )}
+      {subjects.error && <p className="text-destructive text-xs">{subjects.error.message}</p>}
+    </div>
+  )
+}
+
 export function ProduceDialog({
   clusterId,
   topic,
   partitions,
+  hasSchemaRegistry,
 }: {
   clusterId: string
   topic: string
   partitions: number
+  hasSchemaRegistry: boolean
 }) {
+  const [keySchema, setKeySchema] = useState<SchemaRef>({ subject: '' })
+  const [valueSchema, setValueSchema] = useState<SchemaRef>({ subject: '' })
   const [open, setOpen] = useState(false)
   const [partition, setPartition] = useState('auto')
   const [key, setKey] = useState('')
@@ -74,6 +143,8 @@ export function ProduceDialog({
         value,
         keyFormat,
         valueFormat,
+        keySchema: keyFormat === 'schema' ? keySchema : undefined,
+        valueSchema: valueFormat === 'schema' ? valueSchema : undefined,
         headers: headers.filter((h) => h.key !== '').map(({ key, value }) => ({ key, value })),
       },
       {
@@ -130,9 +201,23 @@ export function ProduceDialog({
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="produce-key-format">Key format</Label>
-              <FormatSelect id="produce-key-format" value={keyFormat} onChange={setKeyFormat} />
+              <FormatSelect
+                id="produce-key-format"
+                value={keyFormat}
+                onChange={setKeyFormat}
+                withSchema={hasSchemaRegistry}
+              />
             </div>
           </div>
+          {keyFormat === 'schema' && (
+            <SchemaPicker
+              id="produce-key-schema"
+              clusterId={clusterId}
+              value={keySchema}
+              onChange={setKeySchema}
+              preferred={`${topic}-key`}
+            />
+          )}
 
           <div className="flex flex-col gap-2">
             <div className="flex items-end gap-2">
@@ -141,7 +226,12 @@ export function ProduceDialog({
                 <Label htmlFor="produce-value-format" className="text-muted-foreground text-xs">
                   format
                 </Label>
-                <FormatSelect id="produce-value-format" value={valueFormat} onChange={setValueFormat} />
+                <FormatSelect
+                  id="produce-value-format"
+                  value={valueFormat}
+                  onChange={setValueFormat}
+                  withSchema={hasSchemaRegistry}
+                />
                 <Label htmlFor="produce-partition" className="text-muted-foreground text-xs">
                   partition
                 </Label>
@@ -160,13 +250,22 @@ export function ProduceDialog({
                 </Select>
               </div>
             </div>
+            {valueFormat === 'schema' && (
+              <SchemaPicker
+                id="produce-value-schema"
+                clusterId={clusterId}
+                value={valueSchema}
+                onChange={setValueSchema}
+                preferred={`${topic}-value`}
+              />
+            )}
             <Textarea
               id="produce-value"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               rows={8}
               className="font-mono text-xs"
-              placeholder={valueFormat === 'json' ? '{"hello": "kafka"}' : ''}
+              placeholder={valueFormat === 'json' || valueFormat === 'schema' ? '{"hello": "kafka"}' : ''}
             />
           </div>
 
