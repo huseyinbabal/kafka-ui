@@ -2,7 +2,7 @@ KIND_CLUSTER ?= kafkatr
 KCTX         ?= kind-$(KIND_CLUSTER)
 IMAGE        ?= kafka-ui:dev
 
-.PHONY: coverage kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
+.PHONY: e2e coverage kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
 
 setup:
 	go mod download
@@ -27,6 +27,10 @@ coverage:
 	go test -cover -coverpkg=./internal/... ./internal/... -args -test.gocoverdir=$(CURDIR)/.cover/unit
 	go test -tags=integration -timeout 15m -cover -coverpkg=./internal/... ./internal/itest/ -args -test.gocoverdir=$(CURDIR)/.cover/it
 	go tool covdata percent -i=.cover/unit,.cover/it
+
+# Browser E2E against the kind deployment (needs `make kind-forward`; KAFKAUI_E2E_URL to override).
+e2e:
+	cd web && bunx playwright install chromium && bunx playwright test
 
 test-integration:
 	go test -race -tags=integration -timeout 15m -coverpkg=./internal/... -coverprofile=coverage-integration.out ./internal/itest/
