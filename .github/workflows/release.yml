@@ -90,7 +90,7 @@ jobs:
             mkdir -p "build/$name"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
               -ldflags="-s -w -X main.version=${TAG}" -o "build/$name/kafka-ui$ext" ./cmd/kafka-ui
-            cp config.example.yaml README.md "build/$name/"
+            cp config.example.yaml README.md LICENSE "build/$name/"
             if [ "$os" = windows ]; then
               (cd build && zip -qr "../dist/$name.zip" "$name")
             else

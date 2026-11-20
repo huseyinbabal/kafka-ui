@@ -16,3 +16,5 @@
 </p>
 
 ![kafka-ui demo: message browser, consumer groups, analytics and the live topology view](docs/public/demo.gif)
+
+<p align="center">Licensed under the <a href="LICENSE">Apache License 2.0</a>.</p>
