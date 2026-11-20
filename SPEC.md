@@ -1,6 +1,6 @@
 # Spec: Kafka UI
 
-> Status: **APPROVED, in progress** (M0–M3 done, 2026-11-20; ACLs verified by unit tests only until an authorizer-enabled cluster exists). Living document: update this first whenever scope or a decision changes.
+> Status: **APPROVED, in progress** (M0–M3 done, 2026-11-20). Living document: update this first whenever scope or a decision changes.
 
 ## 1. Objective
 
@@ -309,10 +309,10 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 ## 11. Open Questions
 
 1. **Schema Registry in kind:** nothing is deployed yet. Proposal: deploy Apicurio Registry (ccompat API) or Confluent `cp-schema-registry` into namespace `kafka-ui` (or `kafka`). Which one? (Ask-first: this changes the cluster.)
-2. **ACLs in kind:** `orders-cluster` has no authorizer and only a plain internal listener. Do we enable `authorization: simple` on it (it needs care, since the existing apps connect anonymously), or test ACLs only against the integration container plus a second Strimzi cluster?
+2. ~~ACLs in kind~~ (resolved: second cluster `secure-cluster`). Was: `orders-cluster` has no authorizer and only a plain internal listener. Do we enable `authorization: simple` on it (it needs care, since the existing apps connect anonymously), or test ACLs only against the integration container plus a second Strimzi cluster?
 3. **UI users:** are the two built-in roles (admin/viewer) enough for v1, or do you need per-cluster roles (e.g. admin on dev, viewer on prod)?
-4. **Second real cluster:** should we create a small second Strimzi `Kafka` in kind for multi-cluster testing?
-5. ~~Git~~: repo initialized (nothing committed yet).
+4. ~~Second real cluster~~ (resolved: yes). Was: should we create a small second Strimzi `Kafka` in kind for multi-cluster testing?
+5. ~~Git~~: private repo github.com/huseyinbabal/kafka-ui.
 
 ## 12. Decisions Log
 - 2026-11-20: Roles stay admin/viewer for v1 (default; per-cluster roles revisit later).
@@ -330,3 +330,5 @@ Each milestone gets a plan and a task breakdown (spec-driven phases 2–3) befor
 - 2026-11-20: Offset reset and group delete only run on `Empty` groups (reset also allows `Dead`, i.e. not yet created). The state is checked again right before the commit; a dry run is required in the UI before Apply. `shift` skips partitions without a commit.
 - 2026-11-20: Mutations are logged as `msg=audit` with action, user and cluster. The broker's own error message (e.g. invalid config value) is passed to the UI.
 - 2026-11-20: The ACL page shows "No authorizer" on `SECURITY_DISABLED`. ACL deletes match one exact entry (literal/prefixed only; ANY/MATCH are not exposed).
+- 2026-11-20: Second dev cluster `secure-cluster` (namespace `kafka`, 1 node, SCRAM-SHA-512, simple authorizer, `kafka-ui` is a super user) from `deploy/k8s/secure-cluster.yaml`; `make kind-secure` creates it and copies the kafka-ui password into the `kafka-ui` namespace. ACL CRUD verified against it.
+- 2026-11-20: A cluster whose client cannot be created (e.g. missing credential env var) is listed as offline with the reason instead of stopping the app.

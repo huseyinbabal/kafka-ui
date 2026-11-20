@@ -34,7 +34,8 @@ type Cluster struct {
 	Client *kgo.Client
 	Admin  *kadm.Client
 
-	opts []kgo.Opt
+	opts     []kgo.Opt
+	setupErr error // non-nil when the client could not be created; Client/Admin are nil then
 
 	mu        sync.RWMutex
 	status    Status
@@ -45,6 +46,9 @@ type Cluster struct {
 // NewClient creates a short-lived client with the cluster's connection settings,
 // e.g. a direct-partition consumer for a message scan. The caller must Close it.
 func (c *Cluster) NewClient(extra ...kgo.Opt) (*kgo.Client, error) {
+	if c.setupErr != nil {
+		return nil, c.setupErr
+	}
 	opts := append(append([]kgo.Opt(nil), c.opts...), extra...)
 	return kgo.NewClient(opts...)
 }
@@ -80,22 +84,28 @@ type Registry struct {
 	log      *slog.Logger
 }
 
+// NewRegistry creates a client per cluster. A cluster whose client cannot be
+// created is kept as offline instead of failing the whole registry.
 func NewRegistry(cfgs []config.ClusterConfig, log *slog.Logger) (*Registry, error) {
 	r := &Registry{clusters: map[string]*Cluster{}, log: log}
 	for _, cfg := range cfgs {
-		opts, err := clientOpts(cfg)
-		if err != nil {
-			r.Close()
-			return nil, fmt.Errorf("cluster %s: %w", cfg.ID, err)
-		}
-		// The shared client produces with explicit partitions; see kafka.Produce.
-		cl, err := kgo.NewClient(append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))...)
-		if err != nil {
-			r.Close()
-			return nil, fmt.Errorf("cluster %s: %w", cfg.ID, err)
-		}
 		r.order = append(r.order, cfg.ID)
-		r.clusters[cfg.ID] = &Cluster{Config: cfg, Client: cl, Admin: kadm.NewClient(cl), opts: opts, status: StatusUnknown}
+		c := &Cluster{Config: cfg, status: StatusUnknown}
+		r.clusters[cfg.ID] = c
+		opts, err := clientOpts(cfg)
+		if err == nil {
+			// The shared client produces with explicit partitions; see kafka.Produce.
+			c.Client, err = kgo.NewClient(append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))...)
+		}
+		if err != nil {
+			// One misconfigured cluster (e.g. a missing credential) must not take the
+			// whole UI down: keep it listed as permanently offline with the reason.
+			c.setupErr = err
+			c.setHealth(err)
+			log.Error("cluster setup failed", "cluster", cfg.ID, "err", err)
+			continue
+		}
+		c.Admin, c.opts = kadm.NewClient(c.Client), opts
 	}
 	return r, nil
 }
@@ -190,6 +200,9 @@ func (r *Registry) RunHealthChecks(ctx context.Context, every time.Duration) {
 	check := func() {
 		var wg sync.WaitGroup
 		for _, c := range r.All() {
+			if c.setupErr != nil {
+				continue
+			}
 			wg.Go(func() {
 				cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 				defer cancel()
@@ -218,6 +231,8 @@ func (r *Registry) RunHealthChecks(ctx context.Context, every time.Duration) {
 
 func (r *Registry) Close() {
 	for _, c := range r.clusters {
-		c.Client.Close()
+		if c.Client != nil {
+			c.Client.Close()
+		}
 	}
 }

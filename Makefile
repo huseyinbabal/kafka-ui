@@ -2,7 +2,7 @@ KIND_CLUSTER ?= kafkatr
 KCTX         ?= kind-$(KIND_CLUSTER)
 IMAGE        ?= kafka-ui:dev
 
-.PHONY: setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
+.PHONY: kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
 
 setup:
 	go mod download
@@ -46,6 +46,15 @@ kind-deploy: image
 	kubectl --context $(KCTX) apply -f deploy/k8s/kafka-ui.yaml
 	kubectl --context $(KCTX) -n kafka-ui rollout restart deploy/kafka-ui
 	kubectl --context $(KCTX) -n kafka-ui rollout status deploy/kafka-ui --timeout=120s
+
+# Second dev cluster (SCRAM + simple authorizer) and the kafka-ui credentials for it.
+kind-secure:
+	kubectl --context $(KCTX) apply -f deploy/k8s/secure-cluster.yaml
+	kubectl --context $(KCTX) -n kafka wait kafka/secure-cluster --for=condition=Ready --timeout=300s
+	kubectl --context $(KCTX) -n kafka wait kafkauser/kafka-ui --for=condition=Ready --timeout=120s
+	kubectl --context $(KCTX) -n kafka-ui create secret generic kafka-ui-secure-creds \
+		--from-literal=password="$$(kubectl --context $(KCTX) -n kafka get secret kafka-ui -o jsonpath='{.data.password}' | base64 -d)" \
+		--dry-run=client -o yaml | kubectl --context $(KCTX) apply -f -
 
 kind-forward:
 	kubectl --context $(KCTX) -n kafka-ui port-forward svc/kafka-ui 18080:8080

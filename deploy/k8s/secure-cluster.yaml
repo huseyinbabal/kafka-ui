@@ -1,0 +1,76 @@
+# Second dev cluster: SCRAM-SHA-512 auth + simple authorizer, for testing ACLs
+# and multi-cluster. Single dual-role node, ephemeral storage (data is lost on restart).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: secure-dual
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: secure-cluster
+spec:
+  replicas: 1
+  roles: [controller, broker]
+  storage:
+    type: ephemeral
+  resources:
+    requests: { memory: 768Mi, cpu: 200m }
+    limits: { memory: 1536Mi }
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: secure-cluster
+  namespace: kafka
+spec:
+  kafka:
+    version: 4.3.2
+    listeners:
+      - name: scram
+        port: 9092
+        type: internal
+        tls: false
+        authentication:
+          type: scram-sha-512
+    authorization:
+      type: simple
+      # kafka-ui needs to see and manage everything, including ACLs.
+      superUsers: [kafka-ui]
+    config:
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+  entityOperator:
+    userOperator: {}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: kafka-ui
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: secure-cluster
+spec:
+  authentication:
+    type: scram-sha-512
+---
+# A sample application user so the ACL page has something to show.
+# Strimzi's user operator owns these ACLs and re-creates them if deleted in the UI.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: demo-app
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: secure-cluster
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource: { type: topic, name: demo, patternType: prefix }
+        operations: [Read, Write, Describe]
+      - resource: { type: group, name: demo-, patternType: prefix }
+        operations: [Read]
