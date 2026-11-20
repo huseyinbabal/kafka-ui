@@ -63,6 +63,9 @@ func TestCollectorAndLiveSnapshot(t *testing.T) {
 		return ts != nil && ts.Messages > 0 && ts.MsgRate > 0 && len(col.PartitionRates("it")[topic]) == 2
 	})
 	w := analytics.Window{From: time.Now().Add(-5 * time.Minute), To: time.Now(), Step: time.Second}
+	if _, ok := col.ConsumeRates("it")[group][topic]; !ok {
+		t.Fatalf("collector must report consume rates for %s/%s", group, topic)
+	}
 	var gs *analytics.GroupStat
 	for i := range o.Groups {
 		if o.Groups[i].Group == group {
@@ -78,7 +81,7 @@ func TestCollectorAndLiveSnapshot(t *testing.T) {
 	}
 
 	// Live snapshot over the same cluster: broker, topic, group, member and the links between them.
-	hub := live.NewHub(ctx, 500*time.Millisecond, col.PartitionRates, quiet)
+	hub := live.NewHub(ctx, 500*time.Millisecond, col, quiet)
 	events, unsubscribe := hub.Subscribe(c)
 	defer unsubscribe()
 	var snap *live.Snapshot

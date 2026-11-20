@@ -71,9 +71,22 @@ type Snapshot struct {
 	Links []Link `json:"links"`
 }
 
-// RateSource returns per-partition ingress rates (msg/s), keyed by topic then
-// partition; nil when unknown (e.g. before the collector's first minute).
-type RateSource func(cluster string) map[string]map[int32]float64
+// RateSource provides rates measured elsewhere (the analytics collector), so a
+// freshly opened view shows real numbers instead of waiting for its own history.
+// Either method may return nil when nothing is known yet.
+type RateSource interface {
+	// PartitionRates is ingress per topic and partition (msg/s).
+	PartitionRates(cluster string) map[string]map[int32]float64
+	// ConsumeRates is consumption per group, topic and partition (msg/s).
+	ConsumeRates(cluster string) map[string]map[string]map[int32]float64
+}
+
+type noRates struct{}
+
+func (noRates) PartitionRates(string) map[string]map[int32]float64 { return nil }
+func (noRates) ConsumeRates(string) map[string]map[string]map[int32]float64 {
+	return nil
+}
 
 func nodeID(kind NodeKind, name string) string { return string(kind) + ":" + name }
 
@@ -149,8 +162,18 @@ func build(ctx context.Context, cl *cluster.Cluster, rates RateSource, tr *consu
 		}
 	}
 	now := time.Now()
-	in := rates(cl.Config.ID)
+	in := rates.PartitionRates(cl.Config.ID)
 	consumed := tr.rates(now, lags)
+	// Prefer the collector's minute-long view: the local window starts empty
+	// when a view opens, and batch committers would read as idle until it fills.
+	for g, topics := range rates.ConsumeRates(cl.Config.ID) {
+		if consumed[g] == nil {
+			consumed[g] = map[string]map[int32]float64{}
+		}
+		for t, ps := range topics {
+			consumed[g][t] = ps
+		}
+	}
 
 	snap := &Snapshot{At: now.UnixMilli(), Nodes: []Node{}, Links: []Link{}}
 	brokers := map[int32]*Node{}

@@ -172,12 +172,12 @@ Requires Kafka 3.x or newer. KRaft and ZooKeeper-mode clusters both work.
   - no lag
   - behind
   - far behind (≥ 10k)
-  - lag with no consumers: the group lags and consumed nothing in the last 30s
+  - lag with no consumers: the group lags, has no members, and consumed nothing recently
 - **Changes:** new consumers are highlighted, and joins/leaves are listed under "Recent changes".
 - **Controls:** filter, hide internal topics, pause, and a details panel for every node.
 - **Rates:**
-  - Consume rates use a 30s sliding window of commits, so consumers that commit in batches do not flicker to 0.
-  - Topic and broker rates come from the analytics collector (last minute).
+  - Topic, broker and consume rates come from the analytics collector (last minute), so a newly opened view shows real numbers right away, and consumers that commit in batches do not flicker to 0.
+  - Without collector data, the view falls back to a 30s window of its own snapshots.
 - **Server load:** one snapshot builder runs per watched cluster, only while someone is watching. Slow clients receive only the newest snapshot.
 - **Performance target:** stays above 30 fps with 500 nodes.
 

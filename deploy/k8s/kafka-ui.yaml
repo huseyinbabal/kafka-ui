@@ -1,5 +1,6 @@
-# Local development deployment for the kind cluster `kafkatr`.
-# DEV ONLY: the users below are admin/admin and viewer/viewer.
+# Example deployment, also used for local development with kind (make kind-deploy).
+# DEV ONLY: the users below are admin/admin and viewer/viewer; replace them, and the
+# clusters, before using this anywhere else.
 apiVersion: v1
 kind: Namespace
 metadata:

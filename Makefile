@@ -2,7 +2,7 @@ KIND_CLUSTER ?= kafkatr
 KCTX         ?= kind-$(KIND_CLUSTER)
 IMAGE        ?= kafka-ui:dev
 
-.PHONY: e2e coverage kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
+.PHONY: demo e2e coverage kind-traffic kind-sr kind-secure setup web-build build image test test-integration lint fmt web-dev run kind-deploy kind-forward kind-logs
 
 setup:
 	go mod download
@@ -31,6 +31,10 @@ coverage:
 # Browser E2E against the kind deployment (needs `make kind-forward`; KAFKAUI_E2E_URL to override).
 e2e:
 	cd web && bunx playwright install chromium && bunx playwright test
+
+# Re-record docs/demo.gif from a running instance with traffic (make kind-traffic).
+demo:
+	cd web && rm -rf demo/out && bunx playwright test -c playwright.demo.config.ts && ./demo/to-gif.sh ../docs/demo.gif
 
 test-integration:
 	go test -race -tags=integration -timeout 15m -coverpkg=./internal/... -coverprofile=coverage-integration.out ./internal/itest/

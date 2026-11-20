@@ -29,12 +29,26 @@ type endsAt struct {
 	ends map[tp]int64
 }
 
+// gtp identifies one partition of a group's commits.
+type gtp struct {
+	group     string
+	topic     string
+	partition int32
+}
+
+type commitsAt struct {
+	at      time.Time
+	commits map[gtp]int64
+}
+
 // clusterState is the collector's per-cluster memory between ticks.
 type clusterState struct {
 	sizes    map[string]int64
 	sizesAt  time.Time
-	history  []endsAt // oldest first, covers about rateWindow
+	history  []endsAt    // oldest first, covers about rateWindow
+	commits  []commitsAt // same, for consume rates
 	lastLive *Live
+	consume  map[gtp]float64 // msg/s per group partition over about rateWindow
 }
 
 // PartitionRate is one partition's ingress over the last minute.
@@ -211,8 +225,9 @@ func (c *Collector) tick(ctx context.Context, cl *cluster.Cluster) error {
 		snap.Topics = append(snap.Topics, ts)
 	}
 
-	if groups, err := groupSamples(ctx, adm); err == nil {
-		snap.Groups = groups
+	var commits map[gtp]int64
+	if groups, cs, err := groupSamples(ctx, adm); err == nil {
+		snap.Groups, commits = groups, cs
 	} else if !errors.Is(err, context.DeadlineExceeded) {
 		c.log.Debug("analytics group sample failed", "cluster", cl.Config.ID, "err", err)
 	}
@@ -241,6 +256,22 @@ func (c *Collector) tick(ctx context.Context, cl *cluster.Cluster) error {
 			}
 		}
 	}
+	consume := map[gtp]float64{}
+	if commits != nil {
+		st.commits = append(st.commits, commitsAt{at: now, commits: commits})
+		for len(st.commits) > 2 && now.Sub(st.commits[1].at) >= rateWindow {
+			st.commits = st.commits[1:]
+		}
+		if old := st.commits[0]; len(st.commits) > 1 {
+			if dt := now.Sub(old.at).Seconds(); dt > 0 {
+				for key, at := range commits {
+					if prev, ok := old.commits[key]; ok && at >= prev {
+						consume[key] = float64(at-prev) / dt
+					}
+				}
+			}
+		}
+	}
 	sort.Slice(live.Partitions, func(i, j int) bool {
 		a, b := live.Partitions[i], live.Partitions[j]
 		if a.Topic != b.Topic {
@@ -255,6 +286,7 @@ func (c *Collector) tick(ctx context.Context, cl *cluster.Cluster) error {
 	sort.Slice(live.Brokers, func(i, j int) bool { return live.Brokers[i].Broker < live.Brokers[j].Broker })
 	c.mu.Lock()
 	st.lastLive = live
+	st.consume = consume
 	c.mu.Unlock()
 	return nil
 }
@@ -287,27 +319,30 @@ func topicSizes(ctx context.Context, adm *kadm.Client, md kadm.Metadata) (map[st
 
 // groupSamples sums committed offsets and lag per group and topic. Like
 // kafka-consumer-groups.sh, partitions without a commit add no lag.
-func groupSamples(ctx context.Context, adm *kadm.Client) ([]GroupSample, error) {
+// It also returns every committed offset, for consume rates.
+func groupSamples(ctx context.Context, adm *kadm.Client) ([]GroupSample, map[gtp]int64, error) {
 	listed, err := adm.ListGroups(ctx)
 	if err != nil && !partial(err) {
-		return nil, err
+		return nil, nil, err
 	}
+	commits := map[gtp]int64{}
 	if len(listed) == 0 {
-		return nil, nil
+		return nil, commits, nil
 	}
 	lags, err := adm.Lag(ctx, listed.Groups()...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var out []GroupSample
 	for _, l := range lags.Sorted() {
 		for topic, ps := range l.Lag {
 			gs := GroupSample{Group: l.Group, Topic: topic}
 			committed := false
-			for _, p := range ps {
+			for part, p := range ps {
 				if p.Commit.At < 0 {
 					continue
 				}
+				commits[gtp{l.Group, topic, part}] = p.Commit.At
 				committed = true
 				gs.CommittedSum += p.Commit.At
 				if p.Lag > 0 {
@@ -319,7 +354,7 @@ func groupSamples(ctx context.Context, adm *kadm.Client) ([]GroupSample, error) 
 			}
 		}
 	}
-	return out, nil
+	return out, commits, nil
 }
 
 func partial(err error) bool {
@@ -339,6 +374,28 @@ func (c *Collector) PartitionRates(clusterID string) map[string]map[int32]float6
 			out[p.Topic] = map[int32]float64{}
 		}
 		out[p.Topic][p.Partition] = p.Rate
+	}
+	return out
+}
+
+// ConsumeRates returns each group's consume rate over about the last minute,
+// keyed by group, topic and partition (msg/s); nil before the second sample.
+func (c *Collector) ConsumeRates(clusterID string) map[string]map[string]map[int32]float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	st, ok := c.state[clusterID]
+	if !ok || st.consume == nil {
+		return nil
+	}
+	out := map[string]map[string]map[int32]float64{}
+	for k, r := range st.consume {
+		if out[k.group] == nil {
+			out[k.group] = map[string]map[int32]float64{}
+		}
+		if out[k.group][k.topic] == nil {
+			out[k.group][k.topic] = map[int32]float64{}
+		}
+		out[k.group][k.topic][k.partition] = r
 	}
 	return out
 }

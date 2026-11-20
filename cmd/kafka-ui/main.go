@@ -104,7 +104,7 @@ func run() error {
 	srv := &http.Server{
 		Addr: cfg.Server.Addr,
 		Handler: api.NewServer(cfg, authSvc, reg, web.Dist(), log).WithAnalytics(store, collector).
-			WithLive(live.NewHub(ctx, cfg.Collector.LiveInterval, collector.PartitionRates, log)).Handler(),
+			WithLive(live.NewHub(ctx, cfg.Collector.LiveInterval, collector, log)).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}

@@ -35,7 +35,7 @@ type Hub struct {
 
 func NewHub(root context.Context, interval time.Duration, rates RateSource, log *slog.Logger) *Hub {
 	if rates == nil {
-		rates = func(string) map[string]map[int32]float64 { return nil }
+		rates = noRates{}
 	}
 	return &Hub{
 		interval: interval, log: log, root: root, feeds: map[string]*feed{},
